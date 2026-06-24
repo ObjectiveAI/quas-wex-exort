@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = "4.6.1"
+dotenv = "0.15.0"
 interprocess = { version = "2.4.2", features = ["tokio"] }
 objectiveai-sdk = "2.2.7"
 rmcp = "1.8.0"
