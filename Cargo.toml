@@ -1,0 +1,11 @@
+[package]
+name = "quas-wex-exort"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = "4.6.1"
+interprocess = { version = "2.4.2", features = ["tokio"] }
+objectiveai-sdk = "2.2.7"
+rmcp = "1.8.0"
+tokio = "1.52.3"
