@@ -37,7 +37,8 @@ enum Outcome {
 #[derive(Clone)]
 struct TaskHandle {
     cancel: CancellationToken,
-    /// Set by `wait` to suppress the completion message.
+    /// Suppresses the completion nudge. Set by `wait` (the agent is collecting
+    /// the result) or `cancel` (the agent is discarding the task).
     waited: Arc<AtomicBool>,
     /// `Some` once the worker finishes.
     outcome: watch::Receiver<Option<Arc<Outcome>>>,
@@ -126,6 +127,10 @@ impl TaskRegistry {
     pub fn cancel(&self, aih: &str, id: &str) -> CallToolResult {
         match self.handle(aih, id) {
             Some(handle) => {
+                // Suppress the completion nudge before cancelling, so a task
+                // that finishes in the same instant (completion-vs-cancel race)
+                // still stays silent — cancel means the agent is resolving it.
+                handle.waited.store(true, Ordering::Release);
                 handle.cancel.cancel();
                 remove(&self.by_aih, aih, id);
                 CallToolResult::success(vec![Content::text("cancelled")])
