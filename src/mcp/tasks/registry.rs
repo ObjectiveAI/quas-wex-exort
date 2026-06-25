@@ -82,7 +82,6 @@ impl TaskRegistry {
 
         tokio::spawn(worker(
             self.executor.clone(),
-            self.by_aih.clone(),
             aih,
             id.clone(),
             response_id,
@@ -168,11 +167,10 @@ impl TaskRegistry {
 }
 
 /// The spawned task body: run the tool call (or get cancelled), publish the
-/// outcome to any waiter, and — unless `wait` claimed it first — wake the agent.
+/// outcome to any waiter, and — unless `wait` claimed it first — nudge the agent.
 #[allow(clippy::too_many_arguments)]
 async fn worker(
     executor: PluginExecutor,
-    by_aih: Arc<DashMap<String, DashMap<String, TaskHandle>>>,
     aih: String,
     id: String,
     response_id: String,
@@ -204,14 +202,16 @@ async fn worker(
     // Publish to any waiter before deciding on the message.
     let _ = tx.send(Some(Arc::new(outcome)));
 
+    // If no one waited before completion, nudge the agent to resolve the task:
+    // `task_wait` to collect the result, or `task_cancel` to discard it. The
+    // entry is intentionally NOT removed here — the message carries no result,
+    // so the task must stay retrievable until the agent resolves it explicitly
+    // (removal happens only in `wait`/`cancel`).
     if !waited.load(Ordering::Acquire) {
         if let Some(kind) = kind {
             let text =
                 format!("<quas-wex-exort>\nTask '{id}' has completed {kind}.\n</quas-wex-exort>");
             let _ = send_message(&executor, &aih, &text).await;
-            // Done and reported — drop the entry. (A cancelled task was already
-            // removed by `cancel`; a waited task is removed by `wait`.)
-            remove(&by_aih, &aih, &id);
         }
     }
 }
