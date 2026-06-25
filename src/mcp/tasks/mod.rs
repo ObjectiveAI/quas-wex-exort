@@ -9,21 +9,15 @@ mod registry;
 use rmcp::{
     ErrorData, RoleServer, tool, tool_router,
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content, Extensions},
+    model::{CallToolResult, Content},
     service::RequestContext,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::QuasWexExortMcp;
+use super::common::{AIH_HEADER, RESPONSE_ID_HEADER, required_header};
 pub use registry::TaskRegistry;
-
-/// Header carrying the caller's agent instance hierarchy (keys the task map and
-/// is the completion-message target). Required by every task tool.
-pub const AIH_HEADER: &str = "x-objectiveai-agent-instance-hierarchy";
-/// Header carrying the caller's response id (scopes the underlying tool call).
-/// Required by `task_create`.
-pub const RESPONSE_ID_HEADER: &str = "x-objectiveai-response-id";
 
 /// Wire names of the task tools, used to gate them in `list_tools`.
 pub const TOOL_NAMES: &[&str] = &["create", "list", "wait", "cancel"];
@@ -31,24 +25,6 @@ pub const TOOL_NAMES: &[&str] = &["create", "list", "wait", "cancel"];
 /// Whether `name` is one of the task tools.
 pub fn is_task_tool(name: &str) -> bool {
     TOOL_NAMES.contains(&name)
-}
-
-/// Read a required header off the request extensions, erroring if it is absent
-/// or empty.
-fn required_header(extensions: &Extensions, name: &str) -> Result<String, ErrorData> {
-    let parts = extensions
-        .get::<http::request::Parts>()
-        .ok_or_else(|| ErrorData::invalid_params("missing request parts", None))?;
-    parts
-        .headers
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| {
-            ErrorData::invalid_params(format!("missing required header: {name}"), None)
-        })
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]

@@ -15,11 +15,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use dashmap::DashMap;
 use objectiveai_sdk::cli::command::agents::message as agents_message;
 use objectiveai_sdk::cli::command::agents::selector::AgentSelector;
-use objectiveai_sdk::cli::command::agents::tools::call as tools_call;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::model::{CallToolResult, Content, Meta};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
+
+use crate::mcp::common::call_tool;
 
 /// The terminal state of a task.
 enum Outcome {
@@ -242,27 +243,6 @@ async fn worker(
 /// width (11 chars covers all of `u64`).
 fn gen_id() -> String {
     format!("{:0>11}", base62::encode(rand::random::<u64>()))
-}
-
-/// Run `agents tools call` for `tool`+`arguments` scoped to `response_id`.
-async fn call_tool(
-    executor: &PluginExecutor,
-    response_id: &str,
-    tool: &str,
-    arguments: serde_json::Value,
-) -> Result<objectiveai_sdk::mcp::tool::CallToolResult, String> {
-    let params: objectiveai_sdk::mcp::tool::CallToolRequestParams =
-        serde_json::from_value(serde_json::json!({ "name": tool, "arguments": arguments }))
-            .map_err(|e| format!("invalid tool arguments: {e}"))?;
-    let request = tools_call::Request {
-        path_type: tools_call::Path::AgentsToolsCall,
-        response_id: response_id.to_string(),
-        params,
-        base: Default::default(),
-    };
-    tools_call::execute(executor, request, None)
-        .await
-        .map_err(|e| e.to_string())
 }
 
 /// Send `text` to `aih` via `agents message`. The AIH is split on its last `/`

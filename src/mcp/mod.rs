@@ -1,10 +1,12 @@
 //! The quas-wex-exort agent-facing MCP server.
 //!
 //! A streamable-HTTP `rmcp` server whose tool routers expose the plugin's
-//! capabilities to ObjectiveAI agents. Currently only the `tasks` toolset is
-//! wired in (stubbed); `multi_call` and `python` follow (issues #3, #4).
+//! capabilities to ObjectiveAI agents. The `tasks` and `multi_call` toolsets
+//! are wired in; `python` follows (issue #4).
 
 mod arguments;
+mod common;
+mod multi_call;
 mod run;
 mod tasks;
 
@@ -31,6 +33,9 @@ pub use run::run;
 #[derive(Clone)]
 pub struct QuasWexExortMcp {
     pub tool_router: ToolRouter<Self>,
+    /// Executor for invoking tools through the ObjectiveAI CLI — used directly
+    /// by `multi_call`; the task engine holds its own clone.
+    executor: PluginExecutor,
     /// The in-process task engine, shared across all session clones.
     tasks: Arc<TaskRegistry>,
 }
@@ -38,9 +43,23 @@ pub struct QuasWexExortMcp {
 impl QuasWexExortMcp {
     pub fn new(executor: PluginExecutor) -> Self {
         Self {
-            tool_router: Self::task_tools(),
-            tasks: Arc::new(TaskRegistry::new(executor)),
+            tool_router: Self::task_tools() + Self::multi_tools(),
+            tasks: Arc::new(TaskRegistry::new(executor.clone())),
+            executor,
         }
+    }
+}
+
+/// Whether a tool is allowed for the session, per the toolset flags in the
+/// `x-objectiveai-arguments` header. Tools outside a gated toolset are always
+/// allowed; a gated tool with its flag off is treated as nonexistent.
+fn tool_allowed(name: &str, args: Option<Arguments>) -> bool {
+    if tasks::is_task_tool(name) {
+        args.map(|a| a.tasks).unwrap_or(false)
+    } else if multi_call::is_multi_tool(name) {
+        args.map(|a| a.multi).unwrap_or(false)
+    } else {
+        true
     }
 }
 
@@ -62,16 +81,12 @@ impl ServerHandler for QuasWexExortMcp {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        // Gate task tools on the session's `tasks` argument. When disabled we
-        // return the exact error rmcp emits for a missing tool, so a gated tool
-        // is indistinguishable from one that doesn't exist.
-        if tasks::is_task_tool(request.name.as_ref()) {
-            let tasks_enabled = Arguments::extract(&context.extensions)
-                .map(|a| a.tasks)
-                .unwrap_or(false);
-            if !tasks_enabled {
-                return Err(ErrorData::invalid_params("tool not found", None));
-            }
+        // Gate each toolset on its session argument. When disabled we return the
+        // exact error rmcp emits for a missing tool, so a gated tool is
+        // indistinguishable from one that doesn't exist.
+        let args = Arguments::extract(&context.extensions);
+        if !tool_allowed(request.name.as_ref(), args) {
+            return Err(ErrorData::invalid_params("tool not found", None));
         }
         let tcc = ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await
@@ -82,17 +97,15 @@ impl ServerHandler for QuasWexExortMcp {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        // The task tools are gated on the session's `x-objectiveai-arguments`
-        // header: shown only when `tasks` is true, and hidden when the header
-        // is absent or unparseable.
-        let tasks_enabled = Arguments::extract(&context.extensions)
-            .map(|a| a.tasks)
-            .unwrap_or(false);
+        // Each toolset is gated on the session's `x-objectiveai-arguments`
+        // header: a gated tool is shown only when its flag is true, and hidden
+        // when the header is absent or unparseable.
+        let args = Arguments::extract(&context.extensions);
         let tools = self
             .tool_router
             .list_all()
             .into_iter()
-            .filter(|t| tasks_enabled || !tasks::is_task_tool(t.name.as_ref()))
+            .filter(|t| tool_allowed(t.name.as_ref(), args))
             .collect();
         Ok(ListToolsResult {
             tools,

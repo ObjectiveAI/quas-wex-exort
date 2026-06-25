@@ -2246,6 +2246,7 @@ dependencies = [
  "dashmap",
  "dotenv",
  "envconfig",
+ "futures",
  "http",
  "interprocess",
  "objectiveai-sdk",
