@@ -26,6 +26,7 @@ pub async fn run(ctx: Arc<Context>) -> std::io::Result<()> {
         {
             // `StreamableHttpServerConfig` is `#[non_exhaustive]`, so mutate a
             // default rather than constructing it with a struct literal.
+            // Stateful: the host's MCP proxy requires the `Mcp-Session-Id` header.
             let mut cfg = StreamableHttpServerConfig::default();
             cfg.stateful_mode = true;
             cfg.sse_keep_alive = None;

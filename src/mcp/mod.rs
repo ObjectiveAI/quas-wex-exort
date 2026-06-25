@@ -69,10 +69,13 @@ fn tool_allowed(name: &str, args: Option<Arguments>) -> bool {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for QuasWexExortMcp {
     fn get_info(&self) -> ServerInfo {
-        // Start from the default (server name/version come from the build env)
-        // and advertise tool support.
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
+        // `ServerInfo::default()` reports rmcp's own crate name ("rmcp"); set
+        // ours explicitly — the host's MCP proxy prefixes the agent-visible tool
+        // names with this `serverInfo.name` (so tools surface as
+        // `quas-wex-exort_create`, `quas-wex-exort_multi_call`, …).
+        info.server_info.name = "quas-wex-exort".into();
         info
     }
 

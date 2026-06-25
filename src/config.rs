@@ -89,23 +89,18 @@ impl Envconfig for ConfigBuilder {
 impl ConfigBuilder {
     pub fn build(self) -> Config {
         Config {
-            // Required — unwrapped here, after env init. Absence is a hard
-            // misconfiguration: panic with a clear message.
+            // The only hard requirement: the state root (the lockfile dir lives
+            // under it). Everything else is optional — in particular, the daemon
+            // is launched (`daemon begin`) by the SDK daemon with NO agent
+            // context, so the agent vars are absent there; and the per-request
+            // identity (AIH/response-id) is read from request headers, not here.
             state_dir: PathBuf::from(
                 self.state_dir
                     .expect("OBJECTIVEAI_STATE_DIR must be set (the state root)"),
             ),
-            bin_dir: PathBuf::from(
-                self.bin_dir
-                    .expect("OBJECTIVEAI_BIN_DIR must be set (the plugin binaries dir)"),
-            ),
-            postgres_url: self
-                .postgres_url
-                .expect("OBJECTIVEAI_POSTGRES_URL must be set"),
-            objectiveai_agent_instance_hierarchy: self
-                .objectiveai_agent_instance_hierarchy
-                .expect("OBJECTIVEAI_AGENT_INSTANCE_HIERARCHY must be set"),
-            // Optional — no default; absence is a legitimate `None`.
+            bin_dir: self.bin_dir.map(PathBuf::from),
+            postgres_url: self.postgres_url,
+            objectiveai_agent_instance_hierarchy: self.objectiveai_agent_instance_hierarchy,
             objectiveai_response_id: self.objectiveai_response_id,
             objectiveai_response_ids: self.objectiveai_response_ids,
             objectiveai_agent_id: self.objectiveai_agent_id,
@@ -118,17 +113,16 @@ impl ConfigBuilder {
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     /// Root of the CLI's filesystem state tree (env `OBJECTIVEAI_STATE_DIR`).
-    /// Assumed to already exist. Required (panics if unset).
+    /// Assumed to already exist. The only required field (panics if unset).
     pub state_dir: PathBuf,
-    /// Dir holding the plugin's binaries (env `OBJECTIVEAI_BIN_DIR`), set by
-    /// the host on every spawn. Required (panics if unset).
-    pub bin_dir: PathBuf,
-    /// Postgres connection URL (env `OBJECTIVEAI_POSTGRES_URL`) — the single
-    /// persistence layer. Required.
-    pub postgres_url: String,
+    /// Dir holding the plugin's binaries (env `OBJECTIVEAI_BIN_DIR`). Optional.
+    pub bin_dir: Option<PathBuf>,
+    /// Postgres connection URL (env `OBJECTIVEAI_POSTGRES_URL`). Optional.
+    pub postgres_url: Option<String>,
     /// This agent instance's hierarchy (env
-    /// `OBJECTIVEAI_AGENT_INSTANCE_HIERARCHY`). Required.
-    pub objectiveai_agent_instance_hierarchy: String,
+    /// `OBJECTIVEAI_AGENT_INSTANCE_HIERARCHY`). Optional — absent for the
+    /// daemon; per-request identity is read from headers.
+    pub objectiveai_agent_instance_hierarchy: Option<String>,
     /// Single response id (env `OBJECTIVEAI_RESPONSE_ID`). Optional, no default.
     pub objectiveai_response_id: Option<String>,
     /// Multiple response ids (env `OBJECTIVEAI_RESPONSE_IDS`). Optional, no
@@ -149,11 +143,6 @@ impl Config {
     /// directly under it; assumed to already exist.
     pub fn state_dir(&self) -> PathBuf {
         self.state_dir.clone()
-    }
-
-    /// The plugin binaries dir (env `OBJECTIVEAI_BIN_DIR`).
-    pub fn bin_dir(&self) -> PathBuf {
-        self.bin_dir.clone()
     }
 }
 
