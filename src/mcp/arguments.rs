@@ -25,7 +25,7 @@ pub struct Arguments {
     pub objectiveai: bool,
 }
 
-/// Accept a JSON bool or a `"true"`/`"false"` (or `"1"`/`"0"`) string.
+/// Accept a JSON bool or a `"true"`/`"false"` string.
 fn de_bool<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
@@ -36,8 +36,8 @@ fn de_bool<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
     match BoolOrStr::deserialize(d)? {
         BoolOrStr::Bool(b) => Ok(b),
         BoolOrStr::Str(s) => match s.trim().to_ascii_lowercase().as_str() {
-            "true" | "1" => Ok(true),
-            "false" | "0" | "" => Ok(false),
+            "true" => Ok(true),
+            "false" => Ok(false),
             other => Err(serde::de::Error::custom(format!("invalid boolean: {other:?}"))),
         },
     }
