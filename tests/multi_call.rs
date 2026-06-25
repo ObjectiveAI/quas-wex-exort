@@ -1,0 +1,38 @@
+//! `multi_call` integration tests — the deterministic "invoke other MCP tools
+//! concurrently and get results back" path.
+
+mod common;
+
+use common::{Agent, Host, spawn_echo, test_tool};
+use serde_json::json;
+
+/// Two echo calls run via multi_call are joined into one response, each segment
+/// prefixed with `[result N (tool)]` and carrying that call's echoed input.
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_two_echoes() {
+    let host = Host::new("multi_call_two_echoes");
+    let echo = spawn_echo().await;
+    let agent = Agent::new().mcp_server(echo.url()).call(
+        "multi_call",
+        json!({
+            "calls": [
+                { "tool": test_tool("echo"), "arguments": { "input": "alpha" } },
+                { "tool": test_tool("echo"), "arguments": { "input": "beta" } },
+            ],
+        }),
+    );
+
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+
+    // Both segment prefixes + both echoes, in input order.
+    let r0 = joined.find("[result 0 (test_echo)]").expect("missing result 0");
+    let a = joined.find("alpha").expect("missing alpha");
+    let r1 = joined.find("[result 1 (test_echo)]").expect("missing result 1");
+    let b = joined.find("beta").expect("missing beta");
+    assert!(
+        r0 < a && a < r1 && r1 < b,
+        "segments out of order:\n{joined}"
+    );
+}

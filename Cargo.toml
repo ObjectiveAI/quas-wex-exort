@@ -3,11 +3,6 @@ name = "quas-wex-exort"
 version = "0.1.0"
 edition = "2024"
 
-# The root package is the default member, so `cargo build` builds only
-# quas-wex-exort; the test fixture builds via `cargo build -p test-mcp-server`.
-[workspace]
-members = ["test-mcp-server"]
-
 [dependencies]
 axum = "0.8"
 base62 = "2.2.4"
@@ -26,3 +21,14 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "net", "sync"] }
 tokio-util = "0.7"
+
+[dev-dependencies]
+objectiveai-sdk = { version = "2.2.7", features = ["cli", "cli-executor"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "process", "net"] }
+futures = "0.3"
+serde_json = "1"
+# For the in-process echo MCP server the tests spin up.
+rmcp = { version = "1.8.0", features = ["server", "transport-streamable-http-server"] }
+axum = "0.8"
+schemars = "1.2.1"
+serde = { version = "1.0.228", features = ["derive"] }
