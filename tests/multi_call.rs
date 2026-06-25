@@ -36,3 +36,49 @@ async fn multi_call_two_echoes() {
         "segments out of order:\n{joined}"
     );
 }
+
+/// An empty `calls` list is rejected.
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_empty_is_error() {
+    let host = Host::new("multi_call_empty_is_error");
+    let echo = spawn_echo().await;
+    let agent = Agent::new()
+        .mcp_server(echo.url())
+        .call("multi_call", json!({ "calls": [] }));
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+    assert!(
+        joined.contains("at least one call"),
+        "expected empty-calls error:\n{joined}"
+    );
+}
+
+/// One good + one bad call: both segments present (the bad one carries an
+/// error), and the result is still non-error overall (one succeeded).
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_partial_failure() {
+    let host = Host::new("multi_call_partial_failure");
+    let echo = spawn_echo().await;
+    let agent = Agent::new().mcp_server(echo.url()).call(
+        "multi_call",
+        json!({
+            "calls": [
+                { "tool": test_tool("echo"), "arguments": { "input": "good" } },
+                { "tool": test_tool("nonexistent"), "arguments": {} },
+            ],
+        }),
+    );
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+    assert!(joined.contains("good"), "missing the good echo:\n{joined}");
+    assert!(
+        joined.contains("[result 0 (test_echo)]"),
+        "missing result 0:\n{joined}"
+    );
+    assert!(
+        joined.contains("[result 1 (test_nonexistent)]"),
+        "missing result 1:\n{joined}"
+    );
+}

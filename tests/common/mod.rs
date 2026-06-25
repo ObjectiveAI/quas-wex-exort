@@ -17,7 +17,7 @@
 //! Note: the mock `calls` script is fixed at spawn, so a task's runtime id
 //! (returned by `create`) can't be threaded into a later `wait`/`cancel`. The
 //! deterministic result path is therefore `multi_call` (inline tool calls).
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 mod echo;
 pub use echo::spawn as spawn_echo;
