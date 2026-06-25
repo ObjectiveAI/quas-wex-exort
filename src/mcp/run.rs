@@ -19,7 +19,7 @@ use crate::context::Context;
 pub async fn run(ctx: &Context) -> std::io::Result<()> {
     let lock_dir = ctx.config.state_dir().join("locks");
 
-    let server = QuasWexExortMcp::new();
+    let server = QuasWexExortMcp::new(ctx.executor.clone());
     let service = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),

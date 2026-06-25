@@ -1,0 +1,291 @@
+//! The in-process task engine.
+//!
+//! A **task** is a background invocation of another MCP tool (run via the
+//! ObjectiveAI CLI `agents tools call`). Tasks live in a map keyed by
+//! `agent_instance_hierarchy` (AIH); ids are scoped per-AIH, so `wait`/`cancel`
+//! only see tasks created under the same AIH.
+//!
+//! Each task is a spawned worker. On completion it either hands its result to a
+//! waiting `wait`, or — if no one waited first — wakes the agent with an
+//! `agents message`. Cancellation is immediate and silent.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use dashmap::DashMap;
+use objectiveai_sdk::cli::command::agents::message as agents_message;
+use objectiveai_sdk::cli::command::agents::selector::AgentSelector;
+use objectiveai_sdk::cli::command::agents::tools::call as tools_call;
+use objectiveai_sdk::cli::command::plugin::PluginExecutor;
+use rmcp::model::{CallToolResult, Content};
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
+
+/// The terminal state of a task.
+enum Outcome {
+    /// The underlying tool ran; carries its (already-converted) result, whose
+    /// `is_error` flag distinguishes a successful call from a tool error.
+    Completed(CallToolResult),
+    /// The call could not be made (executor / argument failure).
+    Failed(String),
+    /// The task was cancelled before it finished.
+    Cancelled,
+}
+
+/// A live task's shared handles. Cheap to clone — stored in the map and cloned
+/// out for `wait`/`cancel`/`list`.
+#[derive(Clone)]
+struct TaskHandle {
+    cancel: CancellationToken,
+    /// Set by `wait` to suppress the completion message.
+    waited: Arc<AtomicBool>,
+    /// `Some` once the worker finishes.
+    outcome: watch::Receiver<Option<Arc<Outcome>>>,
+}
+
+/// The per-process task registry, keyed by AIH then task id.
+pub struct TaskRegistry {
+    executor: PluginExecutor,
+    by_aih: Arc<DashMap<String, DashMap<String, TaskHandle>>>,
+}
+
+impl TaskRegistry {
+    pub fn new(executor: PluginExecutor) -> Self {
+        Self {
+            executor,
+            by_aih: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Spawn a task that invokes `tool` with `arguments` (scoped to
+    /// `response_id`) in the background, and return its id immediately.
+    pub fn create(
+        &self,
+        aih: String,
+        response_id: String,
+        tool: String,
+        arguments: serde_json::Value,
+    ) -> String {
+        let id = gen_id();
+        let cancel = CancellationToken::new();
+        let waited = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = watch::channel(None);
+
+        self.by_aih.entry(aih.clone()).or_default().insert(
+            id.clone(),
+            TaskHandle {
+                cancel: cancel.clone(),
+                waited: waited.clone(),
+                outcome: rx,
+            },
+        );
+
+        tokio::spawn(worker(
+            self.executor.clone(),
+            self.by_aih.clone(),
+            aih,
+            id.clone(),
+            response_id,
+            tool,
+            arguments,
+            cancel,
+            waited,
+            tx,
+        ));
+
+        id
+    }
+
+    /// Wait for a task to complete and return the underlying tool's result.
+    /// Marks the task "waited" so the completion message is not sent.
+    pub async fn wait(&self, aih: &str, id: &str) -> CallToolResult {
+        let handle = match self.handle(aih, id) {
+            Some(h) => h,
+            None => return CallToolResult::error(vec![Content::text("task not found")]),
+        };
+        handle.waited.store(true, Ordering::Release);
+
+        let mut rx = handle.outcome.clone();
+        let outcome = match rx.wait_for(|v| v.is_some()).await {
+            Ok(guard) => guard.clone().expect("wait_for guaranteed Some"),
+            Err(_) => return CallToolResult::error(vec![Content::text("task ended unexpectedly")]),
+        };
+        remove(&self.by_aih, aih, id);
+
+        match &*outcome {
+            Outcome::Completed(result) => result.clone(),
+            Outcome::Failed(e) => {
+                CallToolResult::error(vec![Content::text(format!("task failed: {e}"))])
+            }
+            Outcome::Cancelled => {
+                CallToolResult::error(vec![Content::text("task was cancelled")])
+            }
+        }
+    }
+
+    /// Cancel a running task immediately. No completion message is sent.
+    pub fn cancel(&self, aih: &str, id: &str) -> CallToolResult {
+        match self.handle(aih, id) {
+            Some(handle) => {
+                handle.cancel.cancel();
+                remove(&self.by_aih, aih, id);
+                CallToolResult::success(vec![Content::text("cancelled")])
+            }
+            None => CallToolResult::error(vec![Content::text("task not found")]),
+        }
+    }
+
+    /// List the AIH's tasks and their status.
+    pub fn list(&self, aih: &str) -> CallToolResult {
+        let mut items: Vec<serde_json::Value> = Vec::new();
+        if let Some(inner) = self.by_aih.get(aih) {
+            for entry in inner.iter() {
+                let status = match entry.value().outcome.borrow().as_deref() {
+                    None => "running",
+                    Some(Outcome::Cancelled) => "cancelled",
+                    Some(Outcome::Failed(_)) => "error",
+                    Some(Outcome::Completed(r)) => {
+                        if r.is_error == Some(true) {
+                            "error"
+                        } else {
+                            "completed"
+                        }
+                    }
+                };
+                items.push(serde_json::json!({ "task_id": entry.key(), "status": status }));
+            }
+        }
+        let body = serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string());
+        CallToolResult::success(vec![Content::text(body)])
+    }
+
+    /// Clone a task's handle out of the map (releasing the shard lock).
+    fn handle(&self, aih: &str, id: &str) -> Option<TaskHandle> {
+        self.by_aih
+            .get(aih)
+            .and_then(|inner| inner.get(id).map(|h| h.value().clone()))
+    }
+}
+
+/// The spawned task body: run the tool call (or get cancelled), publish the
+/// outcome to any waiter, and — unless `wait` claimed it first — wake the agent.
+#[allow(clippy::too_many_arguments)]
+async fn worker(
+    executor: PluginExecutor,
+    by_aih: Arc<DashMap<String, DashMap<String, TaskHandle>>>,
+    aih: String,
+    id: String,
+    response_id: String,
+    tool: String,
+    arguments: serde_json::Value,
+    cancel: CancellationToken,
+    waited: Arc<AtomicBool>,
+    tx: watch::Sender<Option<Arc<Outcome>>>,
+) {
+    let outcome = tokio::select! {
+        _ = cancel.cancelled() => Outcome::Cancelled,
+        result = call_tool(&executor, &response_id, &tool, arguments) => match result {
+            Ok(native) => Outcome::Completed(to_rmcp(native)),
+            Err(e) => Outcome::Failed(e),
+        },
+    };
+
+    // The completion-message wording, or `None` to stay silent (cancelled).
+    let kind: Option<&str> = match &outcome {
+        Outcome::Cancelled => None,
+        Outcome::Failed(_) => Some("with an error"),
+        Outcome::Completed(r) => Some(if r.is_error == Some(true) {
+            "with an error"
+        } else {
+            "successfully"
+        }),
+    };
+
+    // Publish to any waiter before deciding on the message.
+    let _ = tx.send(Some(Arc::new(outcome)));
+
+    if !waited.load(Ordering::Acquire) {
+        if let Some(kind) = kind {
+            let text =
+                format!("<quas-wex-exort>\nTask '{id}' has completed {kind}.\n</quas-wex-exort>");
+            let _ = send_message(&executor, &aih, &text).await;
+            // Done and reported — drop the entry. (A cancelled task was already
+            // removed by `cancel`; a waited task is removed by `wait`.)
+            remove(&by_aih, &aih, &id);
+        }
+    }
+}
+
+/// Generate a task id: a random `u64` in base62, zero-padded to a constant
+/// width (11 chars covers all of `u64`).
+fn gen_id() -> String {
+    format!("{:0>11}", base62::encode(rand::random::<u64>()))
+}
+
+/// Run `agents tools call` for `tool`+`arguments` scoped to `response_id`.
+async fn call_tool(
+    executor: &PluginExecutor,
+    response_id: &str,
+    tool: &str,
+    arguments: serde_json::Value,
+) -> Result<objectiveai_sdk::mcp::tool::CallToolResult, String> {
+    let params: objectiveai_sdk::mcp::tool::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({ "name": tool, "arguments": arguments }))
+            .map_err(|e| format!("invalid tool arguments: {e}"))?;
+    let request = tools_call::Request {
+        path_type: tools_call::Path::AgentsToolsCall,
+        response_id: response_id.to_string(),
+        params,
+        base: Default::default(),
+    };
+    tools_call::execute(executor, request, None)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Send `text` to `aih` via `agents message`. The AIH is split on its last `/`
+/// into a lineage prefix + leaf instance, per the SDK's `AgentSelector::Instance`.
+async fn send_message(executor: &PluginExecutor, aih: &str, text: &str) -> Result<(), String> {
+    let (parent, instance) = aih
+        .rsplit_once('/')
+        .map(|(p, i)| (Some(p.to_string()), i.to_string()))
+        .unwrap_or((None, aih.to_string()));
+    let request = agents_message::Request {
+        path_type: agents_message::Path::AgentsMessage,
+        agent: AgentSelector::Instance {
+            parent_agent_instance_hierarchy: parent,
+            agent_instance: instance,
+        },
+        message: agents_message::RequestMessage::Simple(text.to_string()),
+        dangerous_advanced: None,
+        base: Default::default(),
+    };
+    agents_message::execute(executor, request, None)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Convert the SDK's native tool result into an rmcp `CallToolResult`. The
+/// SDK's `rmcp_bridge` only converts at the content-block level, so we map the
+/// blocks and reconstruct the result envelope ourselves.
+fn to_rmcp(native: objectiveai_sdk::mcp::tool::CallToolResult) -> CallToolResult {
+    let content: Vec<Content> = native.content.into_iter().map(Into::into).collect();
+    let mut result = if native.is_error == Some(true) {
+        CallToolResult::error(content)
+    } else {
+        CallToolResult::success(content)
+    };
+    if let Some(structured) = native.structured_content {
+        result.structured_content =
+            Some(serde_json::Value::Object(structured.into_iter().collect()));
+    }
+    result
+}
+
+/// Remove a task entry from the map (no-op if its AIH or id is already gone).
+fn remove(by_aih: &DashMap<String, DashMap<String, TaskHandle>>, aih: &str, id: &str) {
+    if let Some(inner) = by_aih.get(aih) {
+        inner.remove(id);
+    }
+}
