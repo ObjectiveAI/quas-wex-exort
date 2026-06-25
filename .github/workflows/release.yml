@@ -1,0 +1,78 @@
+name: release
+
+# Fires when Cargo.toml changes on main. The prepare job only cuts a release
+# when the version is new (no existing v<version> tag), so a Cargo.toml edit
+# that doesn't bump the version is a no-op.
+on:
+  push:
+    branches: [main]
+    paths: ["Cargo.toml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      should_release: ${{ steps.v.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version, create release if new
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists — nothing to do."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            gh release create "v$VERSION" \
+              --repo "${{ github.repository }}" \
+              --target "$GITHUB_SHA" \
+              --title "v$VERSION" \
+              --generate-notes
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # One arm per platform, each on its native runner: build.sh compiles the CLI
+  # and stages the cli_zip into the plugin tree under .objectiveai; we then
+  # upload that zip to the release.
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest,   zip: quas-wex-exort-windows-x86_64.zip }
+          - { runner: windows-11-arm,   zip: quas-wex-exort-windows-aarch64.zip }
+          - { runner: ubuntu-22.04,     zip: quas-wex-exort-linux-x86_64.zip }
+          - { runner: ubuntu-24.04-arm, zip: quas-wex-exort-linux-aarch64.zip }
+          - { runner: macos-15-intel,   zip: quas-wex-exort-macos-x86_64.zip }
+          - { runner: macos-14,         zip: quas-wex-exort-macos-aarch64.zip }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build + stage cli_zip
+        run: bash build.sh --release
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip="$(find .objectiveai/bin/plugins -type f -name '${{ matrix.zip }}' | head -1)"
+          [ -n "$zip" ] || { echo "cli_zip not found: ${{ matrix.zip }}" >&2; exit 1; }
+          gh release upload "v${{ needs.prepare.outputs.version }}" "$zip" \
+            --repo "${{ github.repository }}" --clobber
+
+  # The plugin manifest (objectiveai.json) is committed source, so consumers
+  # read it straight from the tag (raw.githubusercontent at v<version>) rather
+  # than a release asset — no upload job needed.

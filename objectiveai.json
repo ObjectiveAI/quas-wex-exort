@@ -1,0 +1,20 @@
+{
+  "owner": "ObjectiveAI",
+  "name": "quas-wex-exort",
+  "version": "0.1.0",
+  "description": "Programmatic invocation of MCP tools and the ObjectiveAI CLI for ObjectiveAI agents.",
+  "daemon": true,
+  "exec": {
+    "windows": ["./quas-wex-exort.exe"],
+    "linux": ["./quas-wex-exort"],
+    "macos": ["./quas-wex-exort"]
+  },
+  "cli_zip": {
+    "windows": { "x86_64": "quas-wex-exort-windows-x86_64.zip", "aarch64": "quas-wex-exort-windows-aarch64.zip" },
+    "linux": { "x86_64": "quas-wex-exort-linux-x86_64.zip", "aarch64": "quas-wex-exort-linux-aarch64.zip" },
+    "macos": { "x86_64": "quas-wex-exort-macos-x86_64.zip", "aarch64": "quas-wex-exort-macos-aarch64.zip" }
+  },
+  "mcp_servers": [
+    { "name": "quas-wex-exort", "authorization": false }
+  ]
+}

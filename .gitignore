@@ -3,6 +3,11 @@ node_modules/
 *.log
 .DS_Store
 
+# Plugin staging tree (populated by build.sh)
+/.objectiveai/
+**/*.rs.bk
+*.pdb
+
 
 # Added by cargo
 
