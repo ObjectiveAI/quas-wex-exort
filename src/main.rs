@@ -1,14 +1,14 @@
+mod commands;
 mod config;
 mod context;
 mod mcp;
 
-use std::sync::Arc;
+use clap::Parser;
 
-use context::Context;
+use commands::Cli;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let _ = dotenv::dotenv();
-    let ctx = Arc::new(Context::new());
-    mcp::run(ctx).await
+    Cli::parse().run().await
 }
