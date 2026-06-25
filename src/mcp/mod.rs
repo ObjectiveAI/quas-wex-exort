@@ -4,6 +4,7 @@
 //! capabilities to ObjectiveAI agents. Currently only the `tasks` toolset is
 //! wired in (stubbed); `multi_call` and `python` follow (issues #3, #4).
 
+mod arguments;
 mod run;
 mod tasks;
 
