@@ -1,18 +1,28 @@
 //! Per-process context threaded as `&Context` through every command handler.
-//! Holds the env-derived [`Config`](super::config::Config).
+//! Holds the env-derived [`Config`](super::config::Config) and the ObjectiveAI
+//! plugin executor.
+
+use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 
 /// The env-derived runtime context, threaded through every command handler.
 pub struct Context {
     /// The env-derived runtime config.
     pub config: super::config::Config,
+    /// Executor for issuing ObjectiveAI CLI commands back to the host over the
+    /// plugin's stdin/stdout protocol. Cheap to clone (every field is `Arc`).
+    pub executor: PluginExecutor,
 }
 
 impl Context {
-    /// Build the context from the process environment. Loads the config,
-    /// which panics on missing required vars (see [`super::config::load_config`]).
+    /// Build the context from the process environment. Loads the config (which
+    /// panics on missing required vars, see [`super::config::load_config`]) and
+    /// constructs the [`PluginExecutor`], which captures the process
+    /// stdin/stdout and spawns its demuxer task — so it must be called exactly
+    /// once, from within the tokio runtime.
     pub fn new() -> Self {
         Self {
             config: super::config::load_config(),
+            executor: PluginExecutor::new(),
         }
     }
 }
