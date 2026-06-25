@@ -3,6 +3,11 @@ name = "quas-wex-exort"
 version = "0.1.0"
 edition = "2024"
 
+# The root package is the default member, so `cargo build` builds only
+# quas-wex-exort; the test fixture builds via `cargo build -p test-mcp-server`.
+[workspace]
+members = ["test-mcp-server"]
+
 [dependencies]
 axum = "0.8"
 base62 = "2.2.4"

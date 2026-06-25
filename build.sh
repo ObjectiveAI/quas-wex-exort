@@ -105,4 +105,36 @@ if [ "$NO_TEST" = "0" ]; then
   echo "==> installing objectiveai host v$OAI_VERSION into .objectiveai/bin"
   curl -fsSL "https://raw.githubusercontent.com/ObjectiveAI/objectiveai/v$OAI_VERSION/install.sh" \
     | bash -s -- --no-export-path --objectiveai-dir "$REPO_ROOT/.objectiveai"
+
+  # ── build + stage the test MCP server fixture (echo/add tools) ────────────
+  # The agent's deterministic tool source. Bare binary (cli_zip is empty), the
+  # same layout the host's `plugins install` produces.
+  echo "==> building + staging test-mcp-server fixture"
+  cargo build $REL -p test-mcp-server
+  TEST_SRC="$REPO_ROOT/test-mcp-server"
+  TEST_BIN="$REPO_ROOT/target/$PROFILE/test-mcp-server$EXE"
+  [ -f "$TEST_BIN" ] \
+    || { echo "build.sh: test-mcp-server binary missing at $TEST_BIN" >&2; exit 1; }
+  T_OWNER="$(sed -n -E 's/.*"owner"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$TEST_SRC/objectiveai.json" | head -1)"
+  T_NAME="$(sed -n -E 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$TEST_SRC/objectiveai.json" | head -1)"
+  T_VERSION="$(sed -n -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$TEST_SRC/objectiveai.json" | head -1)"
+  TEST_DIR="$REPO_ROOT/.objectiveai/bin/plugins/$T_OWNER/$T_NAME/$T_VERSION"
+  rm -rf "$TEST_DIR"
+  mkdir -p "$TEST_DIR/cli"
+  cp "$TEST_SRC/objectiveai.json" "$TEST_DIR/objectiveai.json"
+  cp "$TEST_BIN" "$TEST_DIR/cli/test-mcp-server$EXE"
+
+  # ── unpack the quas-wex-exort cli_zip in place ───────────────────────────
+  # The staged zip alone isn't runnable; the sandbox needs the binary extracted
+  # into cli/ (the zip stays for the release path).
+  echo "==> unpacking quas-wex-exort plugin into the sandbox"
+  case "$PLATFORM" in
+    windows)
+      powershell.exe -NoProfile -Command \
+        "Expand-Archive -Force -LiteralPath '$(cygpath -w "$CLI_ZIP")' -DestinationPath '$(cygpath -w "$CLI_DIR")'"
+      ;;
+    *)
+      unzip -o -q "$CLI_ZIP" -d "$CLI_DIR"
+      ;;
+  esac
 fi

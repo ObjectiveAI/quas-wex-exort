@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# test.sh — run the integration suite against the local .objectiveai sandbox.
+#
+# Assumes build.sh has ALREADY staged everything into <repo>/.objectiveai: the
+# objectiveai host binaries, the unpacked quas-wex-exort plugin, and the
+# test-mcp-server fixture. test.sh does NOT build — run build.sh first (or
+# build-and-test.sh). It resets per-run state, applies the api config the run
+# needs, then runs cargo-nextest.
+#
+# Requires cargo-nextest on PATH. Extra args forward to nextest
+# (e.g. `bash test.sh <test-name-filter>`).
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
+OAI_DIR="$REPO_ROOT/.objectiveai"
+export OBJECTIVEAI_DIR="$OAI_DIR"
+
+case "$(uname -s)" in
+  CYGWIN*|MINGW*|MSYS*) EXE=".exe" ;;
+  *)                    EXE=""     ;;
+esac
+HOST="$OAI_DIR/bin/objectiveai$EXE"
+[ -x "$HOST" ] \
+  || { echo "test.sh: objectiveai host not found at $HOST — run build.sh first" >&2; exit 1; }
+
+# 1. Stop any running host servers (they hold ports/files open).
+echo "==> objectiveai kill-all"
+"$HOST" kill-all || true
+
+# 2. Fresh per-run state.
+rm -rf "$OAI_DIR/state"
+
+# 3. Global api config the run needs (mcp timeout; backoff is best-effort on
+#    older hosts).
+echo "==> objectiveai api config (global)"
+"$HOST" api config mcp-timeout-ms set --value 300000 --global
+"$HOST" api config backoff-max-elapsed-time-ms set --value 0 --global || true
+
+# 4. Run the suite, then stop the host's servers and exit on nextest's rc.
+echo "==> cargo nextest run"
+rc=0
+cargo nextest run "$@" || rc=$?
+
+echo "==> objectiveai kill-all"
+"$HOST" kill-all || true
+
+exit "$rc"

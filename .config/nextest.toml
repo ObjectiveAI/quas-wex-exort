@@ -1,0 +1,3 @@
+[profile.default]
+test-threads = "num-cpus"
+leak-timeout = "2s"
