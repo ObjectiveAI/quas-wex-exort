@@ -37,6 +37,47 @@ async fn multi_call_two_echoes() {
     );
 }
 
+/// A single call is accepted.
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_single() {
+    let host = Host::new("multi_call_single");
+    let echo = spawn_echo().await;
+    let agent = Agent::new().mcp_server(echo.url()).call(
+        "multi_call",
+        json!({ "calls": [{ "tool": test_tool("echo"), "arguments": { "input": "solo" } }] }),
+    );
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+    assert!(
+        joined.contains("[result 0 (test_echo)]") && joined.contains("solo"),
+        "missing the single echo:\n{joined}"
+    );
+}
+
+/// When every call fails, both error segments are still present.
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_all_error() {
+    let host = Host::new("multi_call_all_error");
+    let echo = spawn_echo().await;
+    let agent = Agent::new().mcp_server(echo.url()).call(
+        "multi_call",
+        json!({
+            "calls": [
+                { "tool": test_tool("nope1"), "arguments": {} },
+                { "tool": test_tool("nope2"), "arguments": {} },
+            ],
+        }),
+    );
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+    assert!(
+        joined.contains("[result 0 (test_nope1)]") && joined.contains("[result 1 (test_nope2)]"),
+        "both error segments should be present:\n{joined}"
+    );
+}
+
 /// An empty `calls` list is rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_call_empty_is_error() {
