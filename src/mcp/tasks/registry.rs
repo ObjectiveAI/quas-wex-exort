@@ -97,9 +97,12 @@ impl TaskRegistry {
     }
 
     /// Wait for a task to complete and return the underlying tool's result.
-    /// Marks the task "waited" so the completion message is not sent.
+    /// Claims (removes) the task up front, so it immediately disappears from
+    /// `list` and any later `wait`/`cancel` for that id gets "not found"; the
+    /// cloned handle is kept to await the result. Marks the task "waited" so
+    /// the completion message is not sent.
     pub async fn wait(&self, aih: &str, id: &str) -> CallToolResult {
-        let handle = match self.handle(aih, id) {
+        let handle = match self.take(aih, id) {
             Some(h) => h,
             None => return CallToolResult::error(vec![Content::text("task not found")]),
         };
@@ -110,7 +113,6 @@ impl TaskRegistry {
             Ok(guard) => guard.clone().expect("wait_for guaranteed Some"),
             Err(_) => return CallToolResult::error(vec![Content::text("task ended unexpectedly")]),
         };
-        remove(&self.by_aih, aih, id);
 
         match &*outcome {
             Outcome::Completed(result) => result.clone(),
@@ -123,16 +125,17 @@ impl TaskRegistry {
         }
     }
 
-    /// Cancel a running task immediately. No completion message is sent.
+    /// Cancel a running task immediately. Claims (removes) the task so it
+    /// disappears from `list` and any later `wait`/`cancel` gets "not found".
+    /// No completion message is sent.
     pub fn cancel(&self, aih: &str, id: &str) -> CallToolResult {
-        match self.handle(aih, id) {
+        match self.take(aih, id) {
             Some(handle) => {
-                // Suppress the completion nudge before cancelling, so a task
-                // that finishes in the same instant (completion-vs-cancel race)
-                // still stays silent — cancel means the agent is resolving it.
+                // Suppress the completion nudge, so a task that finishes in the
+                // same instant (completion-vs-cancel race) still stays silent —
+                // cancel means the agent is resolving it.
                 handle.waited.store(true, Ordering::Release);
                 handle.cancel.cancel();
-                remove(&self.by_aih, aih, id);
                 CallToolResult::success(vec![Content::text("cancelled")])
             }
             None => CallToolResult::error(vec![Content::text("task not found")]),
@@ -163,11 +166,14 @@ impl TaskRegistry {
         CallToolResult::success(vec![Content::text(body)])
     }
 
-    /// Clone a task's handle out of the map (releasing the shard lock).
-    fn handle(&self, aih: &str, id: &str) -> Option<TaskHandle> {
+    /// Atomically remove a task and return its handle, claiming it. `None` if
+    /// the AIH or id is unknown. This is how `wait`/`cancel` delete a task:
+    /// once claimed it no longer appears in `list`, and any later `wait`/`cancel`
+    /// for that id gets "not found".
+    fn take(&self, aih: &str, id: &str) -> Option<TaskHandle> {
         self.by_aih
             .get(aih)
-            .and_then(|inner| inner.get(id).map(|h| h.value().clone()))
+            .and_then(|inner| inner.remove(id).map(|(_, handle)| handle))
     }
 }
 
@@ -286,11 +292,4 @@ fn to_rmcp(native: objectiveai_sdk::mcp::tool::CallToolResult) -> CallToolResult
             Some(serde_json::Value::Object(structured.into_iter().collect()));
     }
     result
-}
-
-/// Remove a task entry from the map (no-op if its AIH or id is already gone).
-fn remove(by_aih: &DashMap<String, DashMap<String, TaskHandle>>, aih: &str, id: &str) {
-    if let Some(inner) = by_aih.get(aih) {
-        inner.remove(id);
-    }
 }
