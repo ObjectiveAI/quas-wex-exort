@@ -295,10 +295,7 @@ impl Host {
         let req = db_query::Request {
             path_type: db_query::Path::DbQuery,
             query: sql.to_string(),
-            base: objectiveai_sdk::cli::command::RequestBase {
-                timeout_seconds: Some(30),
-                ..Default::default()
-            },
+            base: Default::default(),
         };
         let resp: db_query::Response = self
             .executor
