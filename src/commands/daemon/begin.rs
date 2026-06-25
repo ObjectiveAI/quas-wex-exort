@@ -10,8 +10,7 @@ use crate::context::Context;
 pub struct Args {}
 
 impl Args {
-    pub async fn run(self) -> std::io::Result<()> {
-        let ctx = Arc::new(Context::new());
+    pub async fn run(self, ctx: Arc<Context>) -> std::io::Result<()> {
         crate::mcp::run(ctx).await
     }
 }

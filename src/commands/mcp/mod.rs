@@ -2,7 +2,11 @@
 
 mod quas_wex_exort;
 
+use std::sync::Arc;
+
 use clap::Subcommand;
+
+use crate::context::Context;
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -15,9 +19,9 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> std::io::Result<()> {
+    pub async fn run(self, ctx: Arc<Context>) -> std::io::Result<()> {
         match self {
-            Commands::QuasWexExort { command } => command.run().await,
+            Commands::QuasWexExort { command } => command.run(ctx).await,
         }
     }
 }

@@ -2,7 +2,11 @@
 
 mod begin;
 
+use std::sync::Arc;
+
 use clap::Subcommand;
+
+use crate::context::Context;
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -11,9 +15,9 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> std::io::Result<()> {
+    pub async fn run(self, ctx: Arc<Context>) -> std::io::Result<()> {
         match self {
-            Commands::Begin(args) => args.run().await,
+            Commands::Begin(args) => args.run(ctx).await,
         }
     }
 }

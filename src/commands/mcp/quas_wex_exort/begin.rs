@@ -5,6 +5,8 @@
 //! runs our `daemon begin` MCP server), subscribe-reads the server's URL from
 //! the `"mcp"` lockfile, prints it, and exits — the server persists in the daemon.
 
+use std::sync::Arc;
+
 use futures::StreamExt;
 use objectiveai_sdk::cli::command::daemon::spawn as daemon_spawn;
 use objectiveai_sdk::cli::command::plugins::run::{Mcp, McpType};
@@ -27,9 +29,7 @@ pub struct Args {
 }
 
 impl Args {
-    pub async fn run(self) -> std::io::Result<()> {
-        let ctx = Context::new();
-
+    pub async fn run(self, ctx: Arc<Context>) -> std::io::Result<()> {
         // 1. Ensure the daemon is up. The SDK daemon launches our `daemon begin`
         //    (per the plugin manifest's `daemon: true`), which runs the MCP
         //    server and publishes its URL to the `"mcp"` lockfile.
