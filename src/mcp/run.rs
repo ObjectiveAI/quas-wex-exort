@@ -16,10 +16,10 @@ use crate::context::Context;
 /// resulting `http://<addr>` into `<state_dir>/locks` under key `"mcp"` for the
 /// daemon to discover, then serves. Produces no stdout/stderr — the lockfile is
 /// the only side channel.
-pub async fn run(ctx: &Context) -> std::io::Result<()> {
+pub async fn run(ctx: Arc<Context>) -> std::io::Result<()> {
     let lock_dir = ctx.config.state_dir().join("locks");
 
-    let server = QuasWexExortMcp::new(ctx.executor.clone());
+    let server = QuasWexExortMcp::new(ctx);
     let service = StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),

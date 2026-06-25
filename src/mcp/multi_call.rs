@@ -48,7 +48,7 @@ impl QuasWexExortMcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let response_id = common::required_header(&ctx.extensions, RESPONSE_ID_HEADER)?;
-        Ok(run(&self.executor, &response_id, req.calls).await)
+        Ok(run(&self.context.executor, &response_id, req.calls).await)
     }
 }
 

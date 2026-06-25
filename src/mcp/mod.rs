@@ -12,7 +12,6 @@ mod tasks;
 
 use std::sync::Arc;
 
-use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, tool_handler,
     handler::server::{router::tool::ToolRouter, tool::ToolCallContext},
@@ -25,27 +24,28 @@ use rmcp::{
 
 use arguments::Arguments;
 use tasks::TaskRegistry;
+use crate::context::Context;
 
 pub use run::run;
 
 /// The MCP server handler. Cheap to `clone` (the service factory clones one per
-/// session); shared state (the task registry) lives behind `Arc`.
+/// session); shared state lives behind `Arc`.
 #[derive(Clone)]
 pub struct QuasWexExortMcp {
     pub tool_router: ToolRouter<Self>,
-    /// Executor for invoking tools through the ObjectiveAI CLI — used directly
-    /// by `multi_call`; the task engine holds its own clone.
-    executor: PluginExecutor,
+    /// The runtime context (config + plugin executor), shared across all session
+    /// clones. `multi_call` reads `context.executor` directly.
+    context: Arc<Context>,
     /// The in-process task engine, shared across all session clones.
     tasks: Arc<TaskRegistry>,
 }
 
 impl QuasWexExortMcp {
-    pub fn new(executor: PluginExecutor) -> Self {
+    pub fn new(context: Arc<Context>) -> Self {
         Self {
             tool_router: Self::task_tools() + Self::multi_tools(),
-            tasks: Arc::new(TaskRegistry::new(executor.clone())),
-            executor,
+            tasks: Arc::new(TaskRegistry::new(context.executor.clone())),
+            context,
         }
     }
 }
