@@ -1,6 +1,12 @@
 mod config;
 mod context;
+mod mcp;
 
-fn main() {
-    println!("Hello, world!");
+use context::Context;
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let _ = dotenv::dotenv();
+    let ctx = Context::new();
+    mcp::run(&ctx).await
 }
