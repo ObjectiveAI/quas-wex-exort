@@ -337,6 +337,16 @@ impl Host {
         out
     }
 
+    /// Every queued message text delivered to the agent (e.g. quas-wex-exort's
+    /// completion nudges), read from `objectiveai.message_queue_texts`.
+    pub async fn message_texts(&self) -> Vec<String> {
+        self.db_query("SELECT text FROM objectiveai.message_queue_texts")
+            .await
+            .into_iter()
+            .filter_map(|r| r.into_iter().next().and_then(|v| v.as_str().map(String::from)))
+            .collect()
+    }
+
     async fn collect_spawn(&self, selector: AgentSelector, message: &str) -> SpawnResult {
         let req = agents_spawn::Request {
             path_type: agents_spawn::Path::AgentsSpawn,
