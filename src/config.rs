@@ -4,8 +4,8 @@
 //! an `Option<String>` straight from the environment. It lowers into
 //! [`ConfigBuilder`] (still all-optional, so `init*` can never fail on a
 //! missing var), which finally [`build`](ConfigBuilder::build)s into the
-//! [`Config`] the rest of the program uses — unwrapping the required vars and
-//! panicking with a clear message if any is absent.
+//! [`Config`] the rest of the program uses — unwrapping the one required var
+//! (`OBJECTIVEAI_STATE_DIR`) and panicking with a clear message if it is absent.
 
 use std::path::PathBuf;
 
@@ -18,14 +18,13 @@ struct EnvConfigBuilder {
     #[envconfig(from = "OBJECTIVEAI_STATE_DIR")]
     state_dir: Option<String>,
     /// Dir holding the plugin's binaries, stamped by the host on every spawn.
-    /// Required; unwrapped at `build()`.
+    /// Optional — the daemon never reads it.
     #[envconfig(from = "OBJECTIVEAI_BIN_DIR")]
     bin_dir: Option<String>,
-    /// Postgres connection URL — the single persistence layer. Required;
-    /// unwrapped at `build()`.
+    /// Postgres connection URL. Optional — the daemon never reads it.
     #[envconfig(from = "OBJECTIVEAI_POSTGRES_URL")]
     postgres_url: Option<String>,
-    /// This agent instance's hierarchy. Required; unwrapped at `build()`.
+    /// This agent instance's hierarchy. Optional — see [`Config`] field doc.
     #[envconfig(from = "OBJECTIVEAI_AGENT_INSTANCE_HIERARCHY")]
     objectiveai_agent_instance_hierarchy: Option<String>,
     #[envconfig(from = "OBJECTIVEAI_RESPONSE_ID")]
@@ -90,10 +89,13 @@ impl ConfigBuilder {
     pub fn build(self) -> Config {
         Config {
             // The only hard requirement: the state root (the lockfile dir lives
-            // under it). Everything else is optional — in particular, the daemon
-            // is launched (`daemon begin`) by the SDK daemon with NO agent
-            // context, so the agent vars are absent there; and the per-request
-            // identity (AIH/response-id) is read from request headers, not here.
+            // under it). Everything else is optional because this plugin never
+            // reads it: `bin_dir`/`postgres_url`/the agent vars *are* stamped on
+            // the process by the host (the daemon inherits the launching agent's
+            // env), but the daemon is a per-state singleton, so any agent
+            // identity it captured is just whoever happened to launch it first.
+            // The identity that matters is per-request and read from request
+            // headers (the AIH, the arguments), not from this process env.
             state_dir: PathBuf::from(
                 self.state_dir
                     .expect("OBJECTIVEAI_STATE_DIR must be set (the state root)"),
@@ -120,8 +122,9 @@ pub struct Config {
     /// Postgres connection URL (env `OBJECTIVEAI_POSTGRES_URL`). Optional.
     pub postgres_url: Option<String>,
     /// This agent instance's hierarchy (env
-    /// `OBJECTIVEAI_AGENT_INSTANCE_HIERARCHY`). Optional — absent for the
-    /// daemon; per-request identity is read from headers.
+    /// `OBJECTIVEAI_AGENT_INSTANCE_HIERARCHY`). Optional — the daemon is a
+    /// per-state singleton, so this is just the launching agent's AIH and is
+    /// unused; per-request identity is read from headers.
     pub objectiveai_agent_instance_hierarchy: Option<String>,
     /// Single response id (env `OBJECTIVEAI_RESPONSE_ID`). Optional, no default.
     pub objectiveai_response_id: Option<String>,
