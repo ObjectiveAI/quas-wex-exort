@@ -9,10 +9,13 @@ mod run;
 mod tasks;
 
 use rmcp::{
-    ServerHandler, tool_handler,
+    ErrorData, RoleServer, ServerHandler, tool_handler,
     handler::server::router::tool::ToolRouter,
-    model::{ServerCapabilities, ServerInfo},
+    model::{ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo},
+    service::RequestContext,
 };
+
+use arguments::Arguments;
 
 pub use run::run;
 
@@ -38,6 +41,9 @@ impl Default for QuasWexExortMcp {
     }
 }
 
+// `#[tool_handler]` generates `call_tool`/`get_tool` from the router and only
+// fills in `list_tools`/`get_info` when we don't define them — so our custom
+// `list_tools` (toolset gating) and `get_info` below take precedence.
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for QuasWexExortMcp {
     fn get_info(&self) -> ServerInfo {
@@ -46,5 +52,29 @@ impl ServerHandler for QuasWexExortMcp {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        // The task tools are gated on the session's `x-objectiveai-arguments`
+        // header: shown only when `tasks` is true, and hidden when the header
+        // is absent or unparseable.
+        let tasks_enabled = Arguments::extract(&context.extensions)
+            .map(|a| a.tasks)
+            .unwrap_or(false);
+        let tools = self
+            .tool_router
+            .list_all()
+            .into_iter()
+            .filter(|t| tasks_enabled || !tasks::is_task_tool(t.name.as_ref()))
+            .collect();
+        Ok(ListToolsResult {
+            tools,
+            meta: None,
+            next_cursor: None,
+        })
     }
 }

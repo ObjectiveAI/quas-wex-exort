@@ -15,6 +15,14 @@ use serde::Deserialize;
 
 use super::QuasWexExortMcp;
 
+/// Wire names of the task tools, used to gate them in `list_tools`.
+pub const TOOL_NAMES: &[&str] = &["create", "list", "wait", "cancel"];
+
+/// Whether `name` is one of the task tools.
+pub fn is_task_tool(name: &str) -> bool {
+    TOOL_NAMES.contains(&name)
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TaskCreateRequest {
     /// Name of the MCP tool (in your arsenal) to invoke as a background task.
