@@ -17,7 +17,7 @@ use objectiveai_sdk::cli::command::agents::message as agents_message;
 use objectiveai_sdk::cli::command::agents::selector::AgentSelector;
 use objectiveai_sdk::cli::command::agents::tools::call as tools_call;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, Content, Meta};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
@@ -290,6 +290,9 @@ fn to_rmcp(native: objectiveai_sdk::mcp::tool::CallToolResult) -> CallToolResult
     if let Some(structured) = native.structured_content {
         result.structured_content =
             Some(serde_json::Value::Object(structured.into_iter().collect()));
+    }
+    if let Some(meta) = native._meta {
+        result.meta = Some(Meta(meta.into_iter().collect()));
     }
     result
 }
