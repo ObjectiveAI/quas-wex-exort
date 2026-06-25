@@ -1,6 +1,7 @@
 //! The `quas-wex-exort` command-line interface.
 
 mod daemon;
+mod mcp;
 
 use clap::{Parser, Subcommand};
 
@@ -18,12 +19,16 @@ enum Commands {
     /// Daemon commands.
     #[command(subcommand)]
     Daemon(daemon::Commands),
+    /// MCP server commands.
+    #[command(subcommand)]
+    Mcp(mcp::Commands),
 }
 
 impl Cli {
     pub async fn run(self) -> std::io::Result<()> {
         match self.command {
             Commands::Daemon(command) => command.run().await,
+            Commands::Mcp(command) => command.run().await,
         }
     }
 }
