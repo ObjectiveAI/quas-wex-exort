@@ -171,9 +171,20 @@ impl TaskRegistry {
     /// once claimed it no longer appears in `list`, and any later `wait`/`cancel`
     /// for that id gets "not found".
     fn take(&self, aih: &str, id: &str) -> Option<TaskHandle> {
-        self.by_aih
+        // The `get` read-guard is dropped at the end of this statement, before
+        // we take the outer write lock below.
+        let handle = self
+            .by_aih
             .get(aih)
-            .and_then(|inner| inner.remove(id).map(|(_, handle)| handle))
+            .and_then(|inner| inner.remove(id).map(|(_, handle)| handle))?;
+        // Drop the AIH's inner map if this was its last task. `remove_if`
+        // evaluates `is_empty` under the outer shard's write lock, and
+        // `create`'s `entry().or_default().insert()` holds that same lock for
+        // its whole duration — so this can never delete a map that a concurrent
+        // `create` is inserting into (the insert either completes first, leaving
+        // it non-empty, or runs after and recreates the entry).
+        self.by_aih.remove_if(aih, |_, inner| inner.is_empty());
+        Some(handle)
     }
 }
 
