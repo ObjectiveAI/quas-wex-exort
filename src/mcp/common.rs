@@ -42,7 +42,7 @@ pub async fn call_tool(
     arguments: serde_json::Value,
 ) -> Result<objectiveai_sdk::mcp::tool::CallToolResult, String> {
     let params: objectiveai_sdk::mcp::tool::CallToolRequestParams =
-        serde_json::from_value(serde_json::json!({ "name": tool, "arguments": arguments }))
+        serde_json::from_value(serde_json::json!({ "name": tool, "arguments": normalize_arguments(arguments) }))
             .map_err(|e| format!("invalid tool arguments: {e}"))?;
     let request = tools_call::Request {
         path_type: tools_call::Path::AgentsToolsCall,
@@ -53,6 +53,18 @@ pub async fn call_tool(
     match tools_call::execute(executor, request, None).await {
         Ok(result) => Ok(result),
         Err(e) => Err(enrich_tool_not_found(executor, response_id, tool, e.to_string()).await),
+    }
+}
+
+/// Tool arguments must be a JSON object (map), but agents commonly double-encode
+/// them as a JSON *string* (a tool-calling quirk; the ObjectiveAI host likewise
+/// passes args as strings in places). If `arguments` is a string that parses as
+/// JSON, unwrap it to the parsed value; otherwise return it unchanged (a genuine
+/// type error then surfaces downstream).
+fn normalize_arguments(arguments: serde_json::Value) -> serde_json::Value {
+    match arguments {
+        serde_json::Value::String(s) => serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s)),
+        other => other,
     }
 }
 
@@ -138,6 +150,22 @@ mod tests {
         assert_eq!(levenshtein("kitten", "sitting"), 3);
         assert_eq!(levenshtein("test_ecko", "test_echo"), 1); // single k→h swap
         assert_eq!(levenshtein("test_ec", "test_echo"), 2); // two trailing inserts
+    }
+
+    #[test]
+    fn normalize_arguments_unwraps_double_encoded() {
+        use serde_json::json;
+        // A double-encoded object string is parsed back into an object.
+        assert_eq!(
+            normalize_arguments(json!("{\"input\":\"hi\"}")),
+            json!({ "input": "hi" })
+        );
+        // A real object passes through untouched.
+        assert_eq!(normalize_arguments(json!({ "a": 1 })), json!({ "a": 1 }));
+        // A non-JSON string is left as-is (a genuine error surfaces downstream).
+        assert_eq!(normalize_arguments(json!("not json")), json!("not json"));
+        // `null` (no arguments) passes through.
+        assert_eq!(normalize_arguments(json!(null)), json!(null));
     }
 
     #[test]

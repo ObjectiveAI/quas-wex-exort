@@ -100,6 +100,26 @@ async fn multi_call_did_you_mean() {
     );
 }
 
+/// Arguments double-encoded as a JSON string (a common agent quirk) are parsed
+/// rather than rejected. Shared `call_tool` path, so it covers the task toolset.
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_stringified_arguments() {
+    let host = Host::new("multi_call_stringified_arguments");
+    let echo = spawn_echo().await;
+    // `arguments` is a JSON *string*, not an object — the double-encoded shape.
+    let agent = Agent::new().mcp_server(echo.url()).call(
+        "multi_call",
+        json!({ "calls": [{ "tool": test_tool("echo"), "arguments": "{\"input\":\"boxed\"}" }] }),
+    );
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+    assert!(
+        joined.contains("boxed"),
+        "double-encoded args should be parsed and echoed:\n{joined}"
+    );
+}
+
 /// An empty `calls` list is rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_call_empty_is_error() {
