@@ -94,12 +94,12 @@ async fn enrich_tool_not_found(
     }
 }
 
-/// List the tool names currently in the agent's arsenal (`agents tools list`),
-/// scoped to `response_id`. Names are the aggregated `<server>_<tool>` form.
-pub(crate) async fn list_tool_names(
+/// List the full native tools in the agent's arsenal (`agents tools list`),
+/// scoped to `response_id`. Tool names are the aggregated `<server>_<tool>` form.
+pub(crate) async fn list_tools_full(
     executor: &PluginExecutor,
     response_id: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<objectiveai_sdk::mcp::tool::Tool>, String> {
     let request = tools_list::Request {
         path_type: tools_list::Path::AgentsToolsList,
         response_id: response_id.to_string(),
@@ -109,7 +109,17 @@ pub(crate) async fn list_tool_names(
     let result = tools_list::execute(executor, request, None)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(result.tools.into_iter().map(|t| t.name).collect())
+    Ok(result.tools)
+}
+
+/// Just the tool names from [`list_tools_full`].
+pub(crate) async fn list_tool_names(
+    executor: &PluginExecutor,
+    response_id: &str,
+) -> Result<Vec<String>, String> {
+    list_tools_full(executor, response_id)
+        .await
+        .map(|tools| tools.into_iter().map(|t| t.name).collect())
 }
 
 /// The arsenal name closest to `target` by case-insensitive Levenshtein
