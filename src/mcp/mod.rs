@@ -1,11 +1,12 @@
 //! The quas-wex-exort agent-facing MCP server.
 //!
 //! A streamable-HTTP `rmcp` server whose tool routers expose the plugin's
-//! capabilities to ObjectiveAI agents. The `tasks` and `multi_call` toolsets
-//! are wired in; `python` follows (issue #4).
+//! capabilities to ObjectiveAI agents. The `tasks`, `multi_call`, and
+//! `list_tools` toolsets are wired in; `python` follows (issue #4).
 
 mod arguments;
 mod common;
+mod list_tools;
 mod multi_call;
 mod run;
 mod tasks;
@@ -43,7 +44,7 @@ pub struct QuasWexExortMcp {
 impl QuasWexExortMcp {
     pub fn new(context: Arc<Context>) -> Self {
         Self {
-            tool_router: Self::task_tools() + Self::multi_tools(),
+            tool_router: Self::task_tools() + Self::multi_tools() + Self::listing_tools(),
             tasks: Arc::new(TaskRegistry::new(context.executor.clone())),
             context,
         }

@@ -96,7 +96,7 @@ async fn enrich_tool_not_found(
 
 /// List the tool names currently in the agent's arsenal (`agents tools list`),
 /// scoped to `response_id`. Names are the aggregated `<server>_<tool>` form.
-async fn list_tool_names(
+pub(crate) async fn list_tool_names(
     executor: &PluginExecutor,
     response_id: &str,
 ) -> Result<Vec<String>, String> {
