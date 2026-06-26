@@ -2,6 +2,7 @@
 //! ObjectiveAI CLI, and extracting required request headers.
 
 use objectiveai_sdk::cli::command::agents::tools::call as tools_call;
+use objectiveai_sdk::cli::command::agents::tools::list as tools_list;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::ErrorData;
 use rmcp::model::Extensions;
@@ -30,6 +31,10 @@ pub fn required_header(extensions: &Extensions, name: &str) -> Result<String, Er
 
 /// Run `agents tools call` for `tool`+`arguments` scoped to `response_id`,
 /// returning the native MCP tool result, or a raw executor error as a string.
+///
+/// When the call fails because the tool name isn't in the agent's arsenal, the
+/// error string is enriched with a `did you mean <name>?` hint pointing at the
+/// closest available tool (see [`enrich_tool_not_found`]).
 pub async fn call_tool(
     executor: &PluginExecutor,
     response_id: &str,
@@ -45,7 +50,105 @@ pub async fn call_tool(
         params,
         base: Default::default(),
     };
-    tools_call::execute(executor, request, None)
+    match tools_call::execute(executor, request, None).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(enrich_tool_not_found(executor, response_id, tool, e.to_string()).await),
+    }
+}
+
+/// If `error` is a "tool not found" failure, append a `did you mean <name>?`
+/// hint for the closest tool in the arsenal. Best-effort: returns `error`
+/// unchanged when it isn't a not-found error, the arsenal can't be listed, or
+/// it is empty.
+///
+/// Both not-found shapes are covered: the proxy's own `method not found: tool:
+/// <name>` (the server prefix matched no upstream) and an upstream MCP server's
+/// `tool not found` (the prefix matched but the bare tool name didn't).
+async fn enrich_tool_not_found(
+    executor: &PluginExecutor,
+    response_id: &str,
+    tool: &str,
+    error: String,
+) -> String {
+    if !(error.contains("tool not found") || error.contains("method not found")) {
+        return error;
+    }
+    let Ok(names) = list_tool_names(executor, response_id).await else {
+        return error;
+    };
+    match closest_tool(tool, &names) {
+        Some(best) => format!("{error} — did you mean `{best}`?"),
+        None => error,
+    }
+}
+
+/// List the tool names currently in the agent's arsenal (`agents tools list`),
+/// scoped to `response_id`. Names are the aggregated `<server>_<tool>` form.
+async fn list_tool_names(
+    executor: &PluginExecutor,
+    response_id: &str,
+) -> Result<Vec<String>, String> {
+    let request = tools_list::Request {
+        path_type: tools_list::Path::AgentsToolsList,
+        response_id: response_id.to_string(),
+        params: objectiveai_sdk::mcp::tool::ListToolsRequest { cursor: None },
+        base: Default::default(),
+    };
+    let result = tools_list::execute(executor, request, None)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(result.tools.into_iter().map(|t| t.name).collect())
+}
+
+/// The arsenal name closest to `target` by case-insensitive Levenshtein
+/// distance, or `None` if `names` is empty. Ties resolve to the first in order.
+fn closest_tool<'a>(target: &str, names: &'a [String]) -> Option<&'a str> {
+    let target = target.to_ascii_lowercase();
+    names
+        .iter()
+        .min_by_key(|name| levenshtein(&target, &name.to_ascii_lowercase()))
+        .map(String::as_str)
+}
+
+/// Levenshtein edit distance between two strings (single-row DP).
+fn levenshtein(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0usize; b.len() + 1];
+    for (i, ca) in a.chars().enumerate() {
+        cur[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur[j + 1] = (prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b.len()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn levenshtein_basics() {
+        assert_eq!(levenshtein("", ""), 0);
+        assert_eq!(levenshtein("abc", "abc"), 0);
+        assert_eq!(levenshtein("abc", "abd"), 1);
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+        assert_eq!(levenshtein("test_ecko", "test_echo"), 1); // single k→h swap
+        assert_eq!(levenshtein("test_ec", "test_echo"), 2); // two trailing inserts
+    }
+
+    #[test]
+    fn closest_picks_nearest_and_handles_empty() {
+        let names = vec![
+            "test_echo".to_string(),
+            "test_add".to_string(),
+            "quas-wex-exort_multi_call".to_string(),
+        ];
+        assert_eq!(closest_tool("test_ecko", &names), Some("test_echo"));
+        assert_eq!(closest_tool("test_ad", &names), Some("test_add"));
+        assert_eq!(closest_tool("anything", &[]), None);
+    }
 }

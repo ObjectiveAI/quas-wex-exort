@@ -78,6 +78,28 @@ async fn multi_call_all_error() {
     );
 }
 
+/// A misspelled tool name yields a `did you mean <closest>?` suggestion. This
+/// exercises the shared `call_tool` not-found enrichment, so it covers the task
+/// toolset's identical path too.
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_call_did_you_mean() {
+    let host = Host::new("multi_call_did_you_mean");
+    let echo = spawn_echo().await;
+    // `test_ecko` is one edit from the real `test_echo` (and `test_add` is
+    // farther), so the suggestion is unambiguous.
+    let agent = Agent::new().mcp_server(echo.url()).call(
+        "multi_call",
+        json!({ "calls": [{ "tool": test_tool("ecko"), "arguments": { "input": "x" } }] }),
+    );
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let joined = host.tool_texts(&aih).await.join("");
+    assert!(
+        joined.contains("did you mean `test_echo`?"),
+        "expected a did-you-mean suggestion:\n{joined}"
+    );
+}
+
 /// An empty `calls` list is rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_call_empty_is_error() {
