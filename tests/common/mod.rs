@@ -8,7 +8,7 @@
 //! daemon / test MCP server on demand.**
 //!
 //! quas-wex-exort's tools invoke OTHER MCP tools (the agent's arsenal) via
-//! `agents tools call`, so the mock agent's arsenal contains BOTH quas-wex-exort
+//! `agents mcp tools call`, so the mock agent's arsenal contains BOTH quas-wex-exort
 //! (its task/multi_call tools, enabled via the `tasks`/`multi` arguments which
 //! the host bridges to the `x-objectiveai-arguments` header) and the
 //! `test-mcp-server` fixture (the `test_echo` / `test_add` tools quas-wex-exort

@@ -1,7 +1,7 @@
 //! An in-process rmcp echo/add MCP server the tests spin up as a RAW MCP server
 //! (bound on `127.0.0.1:0`, a unique port per test binary). It's passed to the
 //! mock agent as a plain `mcp_servers` URL — not a plugin — so quas-wex-exort's
-//! task/multi_call tools have a real tool to invoke via `agents tools call`.
+//! task/multi_call tools have a real tool to invoke via `agents mcp tools call`.
 
 use std::sync::Arc;
 

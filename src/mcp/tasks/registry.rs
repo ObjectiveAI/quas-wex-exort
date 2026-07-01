@@ -1,7 +1,7 @@
 //! The in-process task engine.
 //!
 //! A **task** is a background invocation of another MCP tool (run via the
-//! ObjectiveAI CLI `agents tools call`). Tasks live in a map keyed by
+//! ObjectiveAI CLI `agents mcp tools call`). Tasks live in a map keyed by
 //! `agent_instance_hierarchy` (AIH); ids are scoped per-AIH, so `wait`/`cancel`
 //! only see tasks created under the same AIH.
 //!

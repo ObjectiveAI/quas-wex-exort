@@ -1,8 +1,8 @@
 //! Shared helpers used by more than one toolset: invoking a tool through the
 //! ObjectiveAI CLI, and extracting required request headers.
 
-use objectiveai_sdk::cli::command::agents::tools::call as tools_call;
-use objectiveai_sdk::cli::command::agents::tools::list as tools_list;
+use objectiveai_sdk::cli::command::agents::mcp::tools::call as tools_call;
+use objectiveai_sdk::cli::command::agents::mcp::tools::list as tools_list;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::ErrorData;
 use rmcp::model::Extensions;
@@ -29,7 +29,7 @@ pub fn required_header(extensions: &Extensions, name: &str) -> Result<String, Er
         .ok_or_else(|| ErrorData::invalid_params(format!("missing required header: {name}"), None))
 }
 
-/// Run `agents tools call` for `tool`+`arguments` scoped to `response_id`,
+/// Run `agents mcp tools call` for `tool`+`arguments` scoped to `response_id`,
 /// returning the native MCP tool result, or a raw executor error as a string.
 ///
 /// When the call fails because the tool name isn't in the agent's arsenal, the
@@ -45,7 +45,7 @@ pub async fn call_tool(
         serde_json::from_value(serde_json::json!({ "name": tool, "arguments": normalize_arguments(arguments) }))
             .map_err(|e| format!("invalid tool arguments: {e}"))?;
     let request = tools_call::Request {
-        path_type: tools_call::Path::AgentsToolsCall,
+        path_type: tools_call::Path::AgentsMcpToolsCall,
         response_id: response_id.to_string(),
         params,
         base: Default::default(),
@@ -94,16 +94,17 @@ async fn enrich_tool_not_found(
     }
 }
 
-/// List the full native tools in the agent's arsenal (`agents tools list`),
+/// List the full native tools in the agent's arsenal (`agents mcp tools list`),
 /// scoped to `response_id`. Tool names are the aggregated `<server>_<tool>` form.
 pub(crate) async fn list_tools_full(
     executor: &PluginExecutor,
     response_id: &str,
 ) -> Result<Vec<objectiveai_sdk::mcp::tool::Tool>, String> {
     let request = tools_list::Request {
-        path_type: tools_list::Path::AgentsToolsList,
+        path_type: tools_list::Path::AgentsMcpToolsList,
         response_id: response_id.to_string(),
         params: objectiveai_sdk::mcp::tool::ListToolsRequest { cursor: None },
+        name: None,
         base: Default::default(),
     };
     let result = tools_list::execute(executor, request, None)
