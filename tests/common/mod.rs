@@ -154,7 +154,6 @@ impl Agent {
                         "multi": self.multi.to_string(),
                         "loops": self.loops.to_string(),
                         "python": "false",
-                        "objectiveai": "false",
                     },
                 }],
             }])

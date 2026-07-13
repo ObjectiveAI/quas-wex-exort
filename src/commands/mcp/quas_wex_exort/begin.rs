@@ -13,7 +13,7 @@ use objectiveai_sdk::cli::command::plugins::run::{Mcp, McpType};
 
 use crate::context::Context;
 
-/// The five toolset booleans the host passes on the launch argv. We don't use
+/// The four toolset booleans the host passes on the launch argv. We don't use
 /// their values — the real gating reads the `x-objectiveai-arguments` request
 /// header at connect time — but they're parsed/validated here.
 #[derive(clap::Args)]
@@ -26,8 +26,6 @@ pub struct Args {
     loops: bool,
     #[arg(long, action = clap::ArgAction::Set)]
     python: bool,
-    #[arg(long, action = clap::ArgAction::Set)]
-    objectiveai: bool,
 }
 
 impl Args {

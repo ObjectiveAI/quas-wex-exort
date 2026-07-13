@@ -23,8 +23,6 @@ pub struct Arguments {
     pub loops: bool,
     #[serde(deserialize_with = "de_bool")]
     pub python: bool,
-    #[serde(deserialize_with = "de_bool")]
-    pub objectiveai: bool,
 }
 
 /// Accept a JSON bool or a `"true"`/`"false"` string.
