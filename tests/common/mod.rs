@@ -66,6 +66,7 @@ pub struct Agent {
     calls: Vec<Value>,
     tasks: bool,
     multi: bool,
+    loops: bool,
     mcp_servers: Vec<String>,
     plugin: bool,
 }
@@ -76,6 +77,7 @@ impl Agent {
             calls: Vec::new(),
             tasks: true,
             multi: true,
+            loops: true,
             mcp_servers: Vec::new(),
             plugin: true,
         }
@@ -104,6 +106,12 @@ impl Agent {
     /// Toggle the `multi` toolset flag.
     pub fn multi(mut self, on: bool) -> Self {
         self.multi = on;
+        self
+    }
+
+    /// Toggle the `loops` toolset flag.
+    pub fn loops(mut self, on: bool) -> Self {
+        self.loops = on;
         self
     }
 
@@ -144,6 +152,7 @@ impl Agent {
                     "arguments": {
                         "tasks": self.tasks.to_string(),
                         "multi": self.multi.to_string(),
+                        "loops": self.loops.to_string(),
                         "python": "false",
                         "objectiveai": "false",
                     },

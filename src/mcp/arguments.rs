@@ -20,6 +20,8 @@ pub struct Arguments {
     #[serde(deserialize_with = "de_bool")]
     pub multi: bool,
     #[serde(deserialize_with = "de_bool")]
+    pub loops: bool,
+    #[serde(deserialize_with = "de_bool")]
     pub python: bool,
     #[serde(deserialize_with = "de_bool")]
     pub objectiveai: bool,

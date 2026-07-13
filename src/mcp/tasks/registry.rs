@@ -13,14 +13,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use dashmap::DashMap;
-use objectiveai_sdk::cli::command::agents::message as agents_message;
-use objectiveai_sdk::cli::command::agents::selector::AgentSelector;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::model::{CallToolResult, Content, Meta};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use crate::mcp::common::call_tool;
+use crate::mcp::common::{call_tool, gen_id, send_message};
 
 /// The terminal state of a task.
 enum Outcome {
@@ -237,35 +235,6 @@ async fn worker(
             let _ = send_message(&executor, &aih, &text).await;
         }
     }
-}
-
-/// Generate a task id: a random `u64` in base62, zero-padded to a constant
-/// width (11 chars covers all of `u64`).
-fn gen_id() -> String {
-    format!("{:0>11}", base62::encode(rand::random::<u64>()))
-}
-
-/// Send `text` to `aih` via `agents message`. The AIH is split on its last `/`
-/// into a lineage prefix + leaf instance, per the SDK's `AgentSelector::Instance`.
-async fn send_message(executor: &PluginExecutor, aih: &str, text: &str) -> Result<(), String> {
-    let (parent, instance) = aih
-        .rsplit_once('/')
-        .map(|(p, i)| (Some(p.to_string()), i.to_string()))
-        .unwrap_or((None, aih.to_string()));
-    let request = agents_message::Request {
-        path_type: agents_message::Path::AgentsMessage,
-        agent: AgentSelector::Instance {
-            parent_agent_instance_hierarchy: parent,
-            agent_instance: instance,
-        },
-        message: agents_message::RequestMessage::Simple(text.to_string()),
-        dangerous_advanced: None,
-        base: Default::default(),
-    };
-    agents_message::execute(executor, request, None)
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
 }
 
 /// Convert the SDK's native tool result into an rmcp `CallToolResult`. The

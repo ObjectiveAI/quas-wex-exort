@@ -1,8 +1,11 @@
 //! Shared helpers used by more than one toolset: invoking a tool through the
-//! ObjectiveAI CLI, and extracting required request headers.
+//! ObjectiveAI CLI, messaging the agent, generating ids, and extracting
+//! required request headers.
 
 use objectiveai_sdk::cli::command::agents::mcp::tools::call as tools_call;
 use objectiveai_sdk::cli::command::agents::mcp::tools::list as tools_list;
+use objectiveai_sdk::cli::command::agents::message as agents_message;
+use objectiveai_sdk::cli::command::agents::selector::AgentSelector;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::ErrorData;
 use rmcp::model::Extensions;
@@ -121,6 +124,39 @@ pub(crate) async fn list_tool_names(
     list_tools_full(executor, response_id)
         .await
         .map(|tools| tools.into_iter().map(|t| t.name).collect())
+}
+
+/// Generate an id: a random `u64` in base62, zero-padded to a constant width
+/// (11 chars covers all of `u64`).
+pub(crate) fn gen_id() -> String {
+    format!("{:0>11}", base62::encode(rand::random::<u64>()))
+}
+
+/// Send `text` to `aih` via `agents message`. The AIH is split on its last `/`
+/// into a lineage prefix + leaf instance, per the SDK's `AgentSelector::Instance`.
+pub(crate) async fn send_message(
+    executor: &PluginExecutor,
+    aih: &str,
+    text: &str,
+) -> Result<(), String> {
+    let (parent, instance) = aih
+        .rsplit_once('/')
+        .map(|(p, i)| (Some(p.to_string()), i.to_string()))
+        .unwrap_or((None, aih.to_string()));
+    let request = agents_message::Request {
+        path_type: agents_message::Path::AgentsMessage,
+        agent: AgentSelector::Instance {
+            parent_agent_instance_hierarchy: parent,
+            agent_instance: instance,
+        },
+        message: agents_message::RequestMessage::Simple(text.to_string()),
+        dangerous_advanced: None,
+        base: Default::default(),
+    };
+    agents_message::execute(executor, request, None)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 /// The arsenal name closest to `target` by case-insensitive Levenshtein

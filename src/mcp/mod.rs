@@ -1,12 +1,13 @@
 //! The quas-wex-exort agent-facing MCP server.
 //!
 //! A streamable-HTTP `rmcp` server whose tool routers expose the plugin's
-//! capabilities to ObjectiveAI agents. The `tasks`, `multi_call`, and
+//! capabilities to ObjectiveAI agents. The `tasks`, `multi_call`, `loops`, and
 //! `list_tools` toolsets are wired in; `python` follows (issue #4).
 
 mod arguments;
 mod common;
 mod list_tools;
+mod loops;
 mod multi_call;
 mod run;
 mod tasks;
@@ -24,6 +25,7 @@ use rmcp::{
 };
 
 use arguments::Arguments;
+use loops::LoopRegistry;
 use tasks::TaskRegistry;
 use crate::context::Context;
 
@@ -39,13 +41,19 @@ pub struct QuasWexExortMcp {
     context: Arc<Context>,
     /// The in-process task engine, shared across all session clones.
     tasks: Arc<TaskRegistry>,
+    /// The in-process loop engine, shared across all session clones.
+    loops: Arc<LoopRegistry>,
 }
 
 impl QuasWexExortMcp {
     pub fn new(context: Arc<Context>) -> Self {
         Self {
-            tool_router: Self::task_tools() + Self::multi_tools() + Self::listing_tools(),
+            tool_router: Self::task_tools()
+                + Self::multi_tools()
+                + Self::loop_tools()
+                + Self::listing_tools(),
             tasks: Arc::new(TaskRegistry::new(context.executor.clone())),
+            loops: Arc::new(LoopRegistry::new(context.executor.clone())),
             context,
         }
     }
@@ -59,6 +67,8 @@ fn tool_allowed(name: &str, args: Option<Arguments>) -> bool {
         args.map(|a| a.tasks).unwrap_or(false)
     } else if multi_call::is_multi_tool(name) {
         args.map(|a| a.multi).unwrap_or(false)
+    } else if loops::is_loop_tool(name) {
+        args.map(|a| a.loops).unwrap_or(false)
     } else {
         true
     }
