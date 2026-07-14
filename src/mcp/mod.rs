@@ -85,7 +85,7 @@ impl ServerHandler for QuasWexExortMcp {
         // `ServerInfo::default()` reports rmcp's own crate name ("rmcp"); set
         // ours explicitly — the host's MCP proxy prefixes the agent-visible tool
         // names with this `serverInfo.name` (so tools surface as
-        // `quas-wex-exort_create`, `quas-wex-exort_multi_call`, …).
+        // `quas-wex-exort_create_task`, `quas-wex-exort_multi_call`, …).
         info.server_info.name = "quas-wex-exort".into();
         info
     }

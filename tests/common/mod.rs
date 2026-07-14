@@ -15,8 +15,9 @@
 //! actually calls).
 //!
 //! Note: the mock `calls` script is fixed at spawn, so a task's runtime id
-//! (returned by `create`) can't be threaded into a later `wait`/`cancel`. The
-//! deterministic result path is therefore `multi_call` (inline tool calls).
+//! (returned by `create_task`) can't be threaded into a later `wait_task`/
+//! `cancel_task`. The deterministic result path is therefore `multi_call`
+//! (inline tool calls).
 #![allow(dead_code, unused_imports)]
 
 mod echo;
@@ -115,8 +116,8 @@ impl Agent {
         self
     }
 
-    /// Append a turn that calls a quas-wex-exort tool (`create`/`list`/`wait`/
-    /// `cancel`/`multi_call`) with `args`.
+    /// Append a turn that calls a quas-wex-exort tool (`create_task`/
+    /// `list_tasks`/`wait_task`/`cancel_task`/`multi_call`/…) with `args`.
     pub fn call(mut self, tool: &str, args: Value) -> Self {
         self.calls.push(json!({
             "tool_calls": [{ "name": format!("{PREFIX}_{tool}"), "arguments": args.to_string() }],

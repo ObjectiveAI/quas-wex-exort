@@ -1,22 +1,22 @@
 //! Task-tool integration tests.
 //!
 //! Note: the mock `calls` script is fixed at spawn, so a task's runtime id
-//! (returned by `create`) can't be threaded into a later `wait`/`cancel`. These
-//! tests therefore cover the deterministic edges; the create→complete→nudge
-//! flow is exercised in `nudge.rs`.
+//! (returned by `create_task`) can't be threaded into a later `wait_task`/
+//! `cancel_task`. These tests therefore cover the deterministic edges; the
+//! create→complete→nudge flow is exercised in `nudge.rs`.
 
 mod common;
 
 use common::{Agent, Host, spawn_echo, test_tool};
 use serde_json::json;
 
-/// `create` returns a fresh task id (11-char base62).
+/// `create_task` returns a fresh task id (11-char base62).
 #[tokio::test(flavor = "multi_thread")]
 async fn task_create_returns_id() {
     let host = Host::new("task_create_returns_id");
     let echo = spawn_echo().await;
     let agent = Agent::new().mcp_server(echo.url()).call(
-        "create",
+        "create_task",
         json!({ "tool": test_tool("echo"), "arguments": { "input": "hi" } }),
     );
     let aih = host.spawn_detached(&agent).await;
@@ -30,7 +30,7 @@ async fn task_create_returns_id() {
     );
 }
 
-/// After `create`, `list` shows the created task (same id).
+/// After `create_task`, `list_tasks` shows the created task (same id).
 #[tokio::test(flavor = "multi_thread")]
 async fn task_create_then_list() {
     let host = Host::new("task_create_then_list");
@@ -38,10 +38,10 @@ async fn task_create_then_list() {
     let agent = Agent::new()
         .mcp_server(echo.url())
         .call(
-            "create",
+            "create_task",
             json!({ "tool": test_tool("echo"), "arguments": { "input": "hi" } }),
         )
-        .call("list", json!({}));
+        .call("list_tasks", json!({}));
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let texts = host.tool_texts(&aih).await;
@@ -52,11 +52,12 @@ async fn task_create_then_list() {
     );
 }
 
-/// `wait` on an unknown id returns "task not found" (immediately, no blocking).
+/// `wait_task` on an unknown id returns "task not found" (immediately, no
+/// blocking).
 #[tokio::test(flavor = "multi_thread")]
 async fn task_wait_unknown_id() {
     let host = Host::new("task_wait_unknown_id");
-    let agent = Agent::new().call("wait", json!({ "task_id": "doesnotexist" }));
+    let agent = Agent::new().call("wait_task", json!({ "task_id": "doesnotexist" }));
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let joined = host.tool_texts(&aih).await.join("");
@@ -66,11 +67,11 @@ async fn task_wait_unknown_id() {
     );
 }
 
-/// `cancel` on an unknown id returns "task not found".
+/// `cancel_task` on an unknown id returns "task not found".
 #[tokio::test(flavor = "multi_thread")]
 async fn task_cancel_unknown_id() {
     let host = Host::new("task_cancel_unknown_id");
-    let agent = Agent::new().call("cancel", json!({ "task_id": "doesnotexist" }));
+    let agent = Agent::new().call("cancel_task", json!({ "task_id": "doesnotexist" }));
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let joined = host.tool_texts(&aih).await.join("");

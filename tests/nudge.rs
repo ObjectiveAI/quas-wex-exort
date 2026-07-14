@@ -17,12 +17,12 @@ async fn create_unwaited_sends_completion_nudge() {
     let host = Host::new("create_unwaited_sends_completion_nudge");
     let echo = spawn_echo().await;
     let agent = Agent::new().mcp_server(echo.url()).call(
-        "create",
+        "create_task",
         json!({ "tool": test_tool("echo"), "arguments": { "input": "hi" } }),
     );
 
     let aih = host.spawn_detached(&agent).await;
-    host.agents_wait(&aih).await; // the create turn
+    host.agents_wait(&aih).await; // the create_task turn
     host.agents_wait(&aih).await; // the nudge-triggered re-run
 
     // The completion nudge was delivered to the agent, in the documented shape.

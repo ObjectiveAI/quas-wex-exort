@@ -41,19 +41,20 @@ async fn multi_disabled() {
     );
 }
 
-/// With `tasks` disabled, the task tools are hidden — `wait` never executes.
+/// With `tasks` disabled, the task tools are hidden — `wait_task` never
+/// executes.
 #[tokio::test(flavor = "multi_thread")]
 async fn tasks_disabled() {
     let host = Host::new("tasks_disabled");
     let agent = Agent::new()
         .tasks(false)
-        .call("wait", json!({ "task_id": "whatever" }));
+        .call("wait_task", json!({ "task_id": "whatever" }));
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let logs = host.logs(&aih).await;
     assert!(
-        called(&logs, "quas-wex-exort_wait"),
-        "assistant should have emitted the wait call"
+        called(&logs, "quas-wex-exort_wait_task"),
+        "assistant should have emitted the wait_task call"
     );
     assert!(
         !executed(&logs),

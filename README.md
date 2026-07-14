@@ -14,11 +14,11 @@ are hidden and uncallable.
 
 ### `tasks` — background tool invocations
 
-- `create` — invoke another MCP tool in the arsenal as a background task;
-  returns the task id immediately.
-- `list` — list your tasks and their status.
-- `wait` — wait for a task to complete and return its result.
-- `cancel` — cancel a running task.
+- `create_task` — invoke another MCP tool in the arsenal as a background
+  task; returns the task id immediately.
+- `list_tasks` — list your tasks and their status.
+- `wait_task` — wait for a task to complete and return its result.
+- `cancel_task` — cancel a running task.
 
 A task that completes without being waited on nudges the agent with a
 completion message.

@@ -20,7 +20,7 @@ use super::common::{AIH_HEADER, RESPONSE_ID_HEADER, required_header};
 pub use registry::TaskRegistry;
 
 /// Wire names of the task tools, used to gate them in `list_tools`.
-pub const TOOL_NAMES: &[&str] = &["create", "list", "wait", "cancel"];
+pub const TOOL_NAMES: &[&str] = &["create_task", "list_tasks", "wait_task", "cancel_task"];
 
 /// Whether `name` is one of the task tools.
 pub fn is_task_tool(name: &str) -> bool {
@@ -50,7 +50,7 @@ pub struct TaskCancelRequest {
 #[tool_router(router = task_tools, vis = "pub")]
 impl QuasWexExortMcp {
     #[tool(
-        name = "create",
+        name = "create_task",
         description = "Create a task: a background invocation of another MCP tool in your arsenal. Returns the task id immediately."
     )]
     async fn task_create(
@@ -64,7 +64,7 @@ impl QuasWexExortMcp {
         Ok(CallToolResult::success(vec![Content::text(id)]))
     }
 
-    #[tool(name = "list", description = "List your tasks and their status.")]
+    #[tool(name = "list_tasks", description = "List your tasks and their status.")]
     async fn task_list(
         &self,
         ctx: RequestContext<RoleServer>,
@@ -74,7 +74,7 @@ impl QuasWexExortMcp {
     }
 
     #[tool(
-        name = "wait",
+        name = "wait_task",
         description = "Wait for a task to complete and return its result. Suppresses the task's completion message."
     )]
     async fn task_wait(
@@ -86,7 +86,7 @@ impl QuasWexExortMcp {
         Ok(self.tasks.wait(&aih, &req.task_id).await)
     }
 
-    #[tool(name = "cancel", description = "Cancel a running task.")]
+    #[tool(name = "cancel_task", description = "Cancel a running task.")]
     async fn task_cancel(
         &self,
         Parameters(req): Parameters<TaskCancelRequest>,

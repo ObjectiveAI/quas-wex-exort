@@ -224,7 +224,7 @@ async fn worker(
     let _ = tx.send(Some(Arc::new(outcome)));
 
     // If no one waited before completion, nudge the agent to resolve the task:
-    // `task_wait` to collect the result, or `task_cancel` to discard it. The
+    // `wait_task` to collect the result, or `cancel_task` to discard it. The
     // entry is intentionally NOT removed here — the message carries no result,
     // so the task must stay retrievable until the agent resolves it explicitly
     // (removal happens only in `wait`/`cancel`).
