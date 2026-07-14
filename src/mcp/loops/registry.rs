@@ -2,12 +2,12 @@
 //!
 //! A **loop** is a spawned worker that delivers a fixed message to its agent
 //! (via `agents message`) every interval. Loops live in a map keyed by
-//! `agent_instance_hierarchy` (AIH); ids are scoped per-AIH, so `end_loop`
-//! only sees loops begun under the same AIH.
+//! `agent_instance_hierarchy` (AIH); ids are scoped per-AIH, so `cancel_loop`
+//! only sees loops created under the same AIH.
 //!
-//! There is no persistence and no auto-cleanup: a never-ended loop runs until
-//! the daemon process exits (matching how unresolved task entries live for the
-//! process lifetime).
+//! There is no persistence and no auto-cleanup: a never-cancelled loop runs
+//! until the daemon process exits (matching how unresolved task entries live
+//! for the process lifetime).
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 use crate::mcp::common::{gen_id, send_message};
 
 /// A live loop's shared handle. Cheap to clone — stored in the map and cloned
-/// out for `end`/`list`.
+/// out for `cancel`/`list`.
 #[derive(Clone)]
 struct LoopHandle {
     cancel: CancellationToken,
@@ -47,7 +47,7 @@ impl LoopRegistry {
     /// Spawn a loop that messages `aih` with `message` every
     /// `interval_seconds`, and return its id immediately. The first message
     /// arrives after one full interval.
-    pub fn begin(&self, aih: String, interval_seconds: u64, message: String) -> String {
+    pub fn create(&self, aih: String, interval_seconds: u64, message: String) -> String {
         let id = gen_id();
         let cancel = CancellationToken::new();
         // Seeded here so the entry is listable before the worker's first cycle;
@@ -77,13 +77,13 @@ impl LoopRegistry {
         id
     }
 
-    /// End a loop immediately. Claims (removes) the loop so any later `end`
-    /// for that id gets "not found".
-    pub fn end(&self, aih: &str, id: &str) -> CallToolResult {
+    /// Cancel a loop immediately. Claims (removes) the loop so any later
+    /// `cancel` for that id gets "not found".
+    pub fn cancel(&self, aih: &str, id: &str) -> CallToolResult {
         match self.take(aih, id) {
             Some(handle) => {
                 handle.cancel.cancel();
-                CallToolResult::success(vec![Content::text("ended")])
+                CallToolResult::success(vec![Content::text("cancelled")])
             }
             None => CallToolResult::error(vec![Content::text("loop not found")]),
         }
@@ -120,9 +120,9 @@ impl LoopRegistry {
             .and_then(|inner| inner.remove(id).map(|(_, handle)| handle))?;
         // Drop the AIH's inner map if this was its last loop. `remove_if`
         // evaluates `is_empty` under the outer shard's write lock, and
-        // `begin`'s `entry().or_default().insert()` holds that same lock for
+        // `create`'s `entry().or_default().insert()` holds that same lock for
         // its whole duration — so this can never delete a map that a concurrent
-        // `begin` is inserting into (the insert either completes first, leaving
+        // `create` is inserting into (the insert either completes first, leaving
         // it non-empty, or runs after and recreates the entry).
         self.by_aih.remove_if(aih, |_, inner| inner.is_empty());
         Some(handle)

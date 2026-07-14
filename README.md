@@ -30,13 +30,13 @@ completion message.
 
 ### `loops` — recurring reminder messages
 
-- `begin_loop` — begin a loop that messages the agent with a fixed message
+- `create_loop` — create a loop that messages the agent with a fixed message
   every `interval_seconds` (minimum 1; first message after one full interval);
   returns the loop id immediately. Messages are delivered wrapped in a
   `<quas-wex-exort loop-id="…">` envelope with the message text verbatim
   inside.
 - `list_loops` — list your loops and how many seconds until each next runs.
-- `end_loop` — end a loop by id, stopping its messages.
+- `cancel_loop` — cancel a loop by id, stopping its messages.
 
 ### `python` — scripted tool orchestration (planned)
 

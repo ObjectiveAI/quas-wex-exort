@@ -1,28 +1,28 @@
 //! Loop-tool integration tests.
 //!
 //! Note: the mock `calls` script is fixed at spawn, so a loop's runtime id
-//! (returned by `begin_loop`) can't be threaded into a later `end_loop` — the
-//! same limitation as `tasks.rs`. These tests cover the deterministic edges
-//! plus the interval delivery flow (asserted via the message queue).
+//! (returned by `create_loop`) can't be threaded into a later `cancel_loop` —
+//! the same limitation as `tasks.rs`. These tests cover the deterministic
+//! edges plus the interval delivery flow (asserted via the message queue).
 
 mod common;
 
 use common::{Agent, Host};
 use serde_json::json;
 
-/// `begin_loop` returns a fresh loop id (11-char base62).
+/// `create_loop` returns a fresh loop id (11-char base62).
 #[tokio::test(flavor = "multi_thread")]
-async fn begin_loop_returns_id() {
-    let host = Host::new("begin_loop_returns_id");
+async fn create_loop_returns_id() {
+    let host = Host::new("create_loop_returns_id");
     // Interval far beyond the test's lifetime: no tick ever fires.
     let agent = Agent::new().call(
-        "begin_loop",
+        "create_loop",
         json!({ "interval_seconds": 3600, "message": "hi" }),
     );
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let texts = host.tool_texts(&aih).await;
-    let id = texts.first().expect("a begin_loop result");
+    let id = texts.first().expect("a create_loop result");
     assert_eq!(id.len(), 11, "loop id should be 11 chars, got {id:?}");
     assert!(
         id.chars().all(|c| c.is_ascii_alphanumeric()),
@@ -30,12 +30,12 @@ async fn begin_loop_returns_id() {
     );
 }
 
-/// `begin_loop` with a zero interval is a tool error.
+/// `create_loop` with a zero interval is a tool error.
 #[tokio::test(flavor = "multi_thread")]
-async fn begin_loop_rejects_zero_interval() {
-    let host = Host::new("begin_loop_rejects_zero_interval");
+async fn create_loop_rejects_zero_interval() {
+    let host = Host::new("create_loop_rejects_zero_interval");
     let agent = Agent::new().call(
-        "begin_loop",
+        "create_loop",
         json!({ "interval_seconds": 0, "message": "hi" }),
     );
     let aih = host.spawn_detached(&agent).await;
@@ -47,21 +47,21 @@ async fn begin_loop_rejects_zero_interval() {
     );
 }
 
-/// After `begin_loop`, `list_loops` shows the created loop (same id) with a
+/// After `create_loop`, `list_loops` shows the created loop (same id) with a
 /// countdown no larger than its interval.
 #[tokio::test(flavor = "multi_thread")]
-async fn begin_loop_then_list() {
-    let host = Host::new("begin_loop_then_list");
+async fn create_loop_then_list() {
+    let host = Host::new("create_loop_then_list");
     let agent = Agent::new()
         .call(
-            "begin_loop",
+            "create_loop",
             json!({ "interval_seconds": 3600, "message": "hi" }),
         )
         .call("list_loops", json!({}));
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let texts = host.tool_texts(&aih).await;
-    let id = texts.first().expect("a begin_loop result").clone();
+    let id = texts.first().expect("a create_loop result").clone();
     let listing = texts
         .iter()
         .skip(1)
@@ -82,11 +82,11 @@ async fn begin_loop_then_list() {
     );
 }
 
-/// `end_loop` on an unknown id returns "loop not found".
+/// `cancel_loop` on an unknown id returns "loop not found".
 #[tokio::test(flavor = "multi_thread")]
-async fn end_loop_unknown_id() {
-    let host = Host::new("end_loop_unknown_id");
-    let agent = Agent::new().call("end_loop", json!({ "loop_id": "doesnotexist" }));
+async fn cancel_loop_unknown_id() {
+    let host = Host::new("cancel_loop_unknown_id");
+    let agent = Agent::new().call("cancel_loop", json!({ "loop_id": "doesnotexist" }));
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let joined = host.tool_texts(&aih).await.join("");
@@ -107,7 +107,7 @@ async fn end_loop_unknown_id() {
 async fn loop_delivers_message() {
     let host = Host::new("loop_delivers_message");
     let agent = Agent::new().call(
-        "begin_loop",
+        "create_loop",
         json!({ "interval_seconds": 1, "message": "tick tock" }),
     );
     let aih = host.spawn_detached(&agent).await;
@@ -117,7 +117,7 @@ async fn loop_delivers_message() {
         .await
         .first()
         .cloned()
-        .expect("a begin_loop result");
+        .expect("a create_loop result");
     let expected = format!("<quas-wex-exort loop-id=\"{id}\">\ntick tock\n</quas-wex-exort>");
 
     // Bounded poll: 60 × 500ms = 30s ceiling, exits on first observation.

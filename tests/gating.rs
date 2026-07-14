@@ -62,21 +62,21 @@ async fn tasks_disabled() {
     );
 }
 
-/// With `loops` disabled, the loop tools are hidden — `begin_loop` never
+/// With `loops` disabled, the loop tools are hidden — `create_loop` never
 /// executes.
 #[tokio::test(flavor = "multi_thread")]
 async fn loops_disabled() {
     let host = Host::new("loops_disabled");
     let agent = Agent::new().loops(false).call(
-        "begin_loop",
+        "create_loop",
         json!({ "interval_seconds": 3600, "message": "x" }),
     );
     let aih = host.spawn_detached(&agent).await;
     host.agents_wait(&aih).await;
     let logs = host.logs(&aih).await;
     assert!(
-        called(&logs, "quas-wex-exort_begin_loop"),
-        "assistant should have emitted the begin_loop call"
+        called(&logs, "quas-wex-exort_create_loop"),
+        "assistant should have emitted the create_loop call"
     );
     assert!(
         !executed(&logs),
