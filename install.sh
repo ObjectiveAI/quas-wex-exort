@@ -31,10 +31,13 @@ case "$(uname -s)" in
   CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *) echo "install.sh: unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
-case "$(uname -m)" in
-  x86_64|amd64)  ARCH="x86_64"  ;;
-  arm64|aarch64) ARCH="aarch64" ;;
-  *) echo "install.sh: unsupported arch: $(uname -m)" >&2; exit 1 ;;
+# Arch from the Rust host triple, not `uname -m` — on Windows ARM the Git
+# Bash process is x86_64-emulated and uname misreports the machine arch.
+HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+case "$HOST_TRIPLE" in
+  x86_64-*)  ARCH="x86_64"  ;;
+  aarch64-*) ARCH="aarch64" ;;
+  *) echo "install.sh: unsupported arch: $HOST_TRIPLE" >&2; exit 1 ;;
 esac
 
 # ── plugin coords (single source of truth: objectiveai.json) ───────────────
