@@ -9,21 +9,25 @@
 //! the daemon process exits (matching how unresolved task entries live for the
 //! process lifetime).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dashmap::DashMap;
 use objectiveai_sdk::cli::command::plugin::PluginExecutor;
 use rmcp::model::{CallToolResult, Content};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::mcp::common::{gen_id, send_message};
 
 /// A live loop's shared handle. Cheap to clone — stored in the map and cloned
-/// out for `end`.
+/// out for `end`/`list`.
 #[derive(Clone)]
 struct LoopHandle {
     cancel: CancellationToken,
+    /// When the loop next delivers its message; refreshed by the worker at the
+    /// start of every cycle. `list` reads it to report the time remaining.
+    next_at: Arc<Mutex<Instant>>,
 }
 
 /// The per-process loop registry, keyed by AIH then loop id.
@@ -46,11 +50,17 @@ impl LoopRegistry {
     pub fn begin(&self, aih: String, interval_seconds: u64, message: String) -> String {
         let id = gen_id();
         let cancel = CancellationToken::new();
+        // Seeded here so the entry is listable before the worker's first cycle;
+        // the worker refreshes it (to essentially the same deadline) on start.
+        let next_at = Arc::new(Mutex::new(
+            Instant::now() + Duration::from_secs(interval_seconds),
+        ));
 
         self.by_aih.entry(aih.clone()).or_default().insert(
             id.clone(),
             LoopHandle {
                 cancel: cancel.clone(),
+                next_at: next_at.clone(),
             },
         );
 
@@ -61,6 +71,7 @@ impl LoopRegistry {
             message,
             interval_seconds,
             cancel,
+            next_at,
         ));
 
         id
@@ -76,6 +87,26 @@ impl LoopRegistry {
             }
             None => CallToolResult::error(vec![Content::text("loop not found")]),
         }
+    }
+
+    /// List the AIH's loops and how long until each next delivers its message.
+    pub fn list(&self, aih: &str) -> CallToolResult {
+        let now = Instant::now();
+        let mut items: Vec<serde_json::Value> = Vec::new();
+        if let Some(inner) = self.by_aih.get(aih) {
+            for entry in inner.iter() {
+                // Saturates to 0 while a due tick's send is still in flight
+                // (the worker refreshes the deadline on its next cycle).
+                let next_at = *entry.value().next_at.lock().expect("next_at lock");
+                let seconds = next_at.saturating_duration_since(now).as_secs();
+                items.push(serde_json::json!({
+                    "loop_id": entry.key(),
+                    "seconds_until_next_run": seconds,
+                }));
+            }
+        }
+        let body = serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string());
+        CallToolResult::success(vec![Content::text(body)])
     }
 
     /// Atomically remove a loop and return its handle, claiming it. `None` if
@@ -110,12 +141,15 @@ async fn worker(
     message: String,
     interval_seconds: u64,
     cancel: CancellationToken,
+    next_at: Arc<Mutex<Instant>>,
 ) {
     let period = Duration::from_secs(interval_seconds);
     loop {
+        let deadline = Instant::now() + period;
+        *next_at.lock().expect("next_at lock") = deadline;
         tokio::select! {
             _ = cancel.cancelled() => return,
-            _ = tokio::time::sleep(period) => {
+            _ = tokio::time::sleep_until(deadline) => {
                 let text = format!("<quas-wex-exort loop-id=\"{id}\">\n{message}\n</quas-wex-exort>");
                 let _ = send_message(&executor, &aih, &text).await;
             }

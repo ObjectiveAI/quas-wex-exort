@@ -1,4 +1,4 @@
-//! The `loops` toolset: begin / end recurring message loops.
+//! The `loops` toolset: begin / list / end recurring message loops.
 //!
 //! A **loop** delivers a fixed message back to the agent every interval, until
 //! ended. The tool bodies are thin: they extract the required headers and
@@ -20,7 +20,7 @@ use super::common::{AIH_HEADER, required_header};
 pub use registry::LoopRegistry;
 
 /// Wire names of the loop tools, used to gate them in `list_tools`.
-pub const TOOL_NAMES: &[&str] = &["begin_loop", "end_loop"];
+pub const TOOL_NAMES: &[&str] = &["begin_loop", "list_loops", "end_loop"];
 
 /// Whether `name` is one of the loop tools.
 pub fn is_loop_tool(name: &str) -> bool {
@@ -61,6 +61,18 @@ impl QuasWexExortMcp {
         }
         let id = self.loops.begin(aih, req.interval_seconds, req.message);
         Ok(CallToolResult::success(vec![Content::text(id)]))
+    }
+
+    #[tool(
+        name = "list_loops",
+        description = "List your loops and how many seconds until each next runs."
+    )]
+    async fn list_loops(
+        &self,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let aih = required_header(&ctx.extensions, AIH_HEADER)?;
+        Ok(self.loops.list(&aih))
     }
 
     #[tool(name = "end_loop", description = "End a loop, stopping its messages.")]

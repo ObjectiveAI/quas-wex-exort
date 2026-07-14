@@ -35,6 +35,7 @@ completion message.
   returns the loop id immediately. Messages are delivered wrapped in a
   `<quas-wex-exort loop-id="…">` envelope with the message text verbatim
   inside.
+- `list_loops` — list your loops and how many seconds until each next runs.
 - `end_loop` — end a loop by id, stopping its messages.
 
 ### `python` — scripted tool orchestration (planned)

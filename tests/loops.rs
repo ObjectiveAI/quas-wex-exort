@@ -47,6 +47,41 @@ async fn begin_loop_rejects_zero_interval() {
     );
 }
 
+/// After `begin_loop`, `list_loops` shows the created loop (same id) with a
+/// countdown no larger than its interval.
+#[tokio::test(flavor = "multi_thread")]
+async fn begin_loop_then_list() {
+    let host = Host::new("begin_loop_then_list");
+    let agent = Agent::new()
+        .call(
+            "begin_loop",
+            json!({ "interval_seconds": 3600, "message": "hi" }),
+        )
+        .call("list_loops", json!({}));
+    let aih = host.spawn_detached(&agent).await;
+    host.agents_wait(&aih).await;
+    let texts = host.tool_texts(&aih).await;
+    let id = texts.first().expect("a begin_loop result").clone();
+    let listing = texts
+        .iter()
+        .skip(1)
+        .find(|t| t.contains(&id))
+        .unwrap_or_else(|| panic!("list_loops should show loop {id}: {texts:?}"));
+    let items: serde_json::Value =
+        serde_json::from_str(listing).expect("list_loops returns JSON");
+    let item = items
+        .as_array()
+        .and_then(|a| a.iter().find(|i| i["loop_id"] == id.as_str()))
+        .unwrap_or_else(|| panic!("an item for loop {id}: {items}"));
+    let seconds = item["seconds_until_next_run"]
+        .as_u64()
+        .expect("seconds_until_next_run is a u64");
+    assert!(
+        seconds <= 3600,
+        "countdown should be within the interval, got {seconds}"
+    );
+}
+
 /// `end_loop` on an unknown id returns "loop not found".
 #[tokio::test(flavor = "multi_thread")]
 async fn end_loop_unknown_id() {
